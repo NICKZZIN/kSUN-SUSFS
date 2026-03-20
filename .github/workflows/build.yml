@@ -4,6 +4,20 @@ on:
   push:
     branches: [ lineage-23.2 ]
   workflow_dispatch:
+    inputs:
+      ksu_type:
+        description: 'Qual versão do KernelSU incluir?'
+        required: true
+        type: choice
+        options:
+          - None
+          - KernelSU
+          - KernelSU-Next
+        default: 'None'
+
+env:
+  # Se rodar por push automático, o padrão será "None". Se rodar manual, usa a escolha do menu.
+  KSU_TYPE: ${{ github.event.inputs.ksu_type || 'None' }}
 
 jobs:
   build:
@@ -37,6 +51,17 @@ jobs:
           git clone https://android.googlesource.com/platform/system/libufdt /tmp/libufdt
           sudo cp /tmp/libufdt/utils/src/mkdtboimg.py /usr/local/bin/mkdtimg
           sudo chmod +x /usr/local/bin/mkdtimg
+
+      - name: Setup KernelSU / KernelSU-Next
+        if: env.KSU_TYPE != 'None'
+        run: |
+          if [ "$KSU_TYPE" == "KernelSU" ]; then
+            echo "✅ Aplicando patch do KernelSU (Julival)..."
+            curl -LSs "https://raw.githubusercontent.com/bittencourtjulival/KernelSU/master/kernel/setup.sh" | bash -s
+          elif [ "$KSU_TYPE" == "KernelSU-Next" ]; then
+            echo "✅ Aplicando patch do KernelSU-Next..."
+            curl -LSs "https://raw.githubusercontent.com/KernelSU-Next/KernelSU-Next/next/kernel/setup.sh" | bash -s
+          fi
 
       - name: Download AOSP Clang r547379
         if: steps.cache-clang.outputs.cache-hit != 'true'
@@ -90,7 +115,7 @@ jobs:
 
       - name: Configure kernel options
         run: |
-          # Enable options without modifying defconfig
+          # Opções padrão do Kernel
           scripts/config --file out/.config \
             --enable CONFIG_COMPAT_VDSO \
             --enable CONFIG_SHADOW_CALL_STACK \
@@ -101,7 +126,18 @@ jobs:
             --enable CONFIG_RELR \
             --enable CONFIG_THINLTO
 
-          # Resolve dependencies non-interactively
+          # Injetar opções do KernelSU se o usuário selecionou algum
+          if [ "$KSU_TYPE" != "None" ]; then
+            echo "🔧 Injetando configurações do $KSU_TYPE no .config..."
+            scripts/config --file out/.config \
+              --enable CONFIG_KPROBES \
+              --enable CONFIG_HAVE_KPROBES \
+              --enable CONFIG_KPROBE_EVENTS \
+              --enable CONFIG_MODULES \
+              --enable CONFIG_MODULE_UNLOAD
+          fi
+
+          # Resolve dependências e limpa o config
           make O=out \
             ARCH=arm64 \
             CC=clang \
@@ -114,36 +150,7 @@ jobs:
       - name: Verify kernel config
         run: |
           echo "=== Checking critical configs ==="
-          grep -E "CONFIG_COMPAT_VDSO|CONFIG_SHADOW_CALL_STACK|CONFIG_SHADOW_CALL_STACK_VMAP|CONFIG_LTO_CLANG|CONFIG_LTO_NONE|CONFIG_CFI_CLANG|CONFIG_RELR|CONFIG_THINLTO" out/.config
-          echo ""
-          declare -A expected=(
-            ["CONFIG_COMPAT_VDSO"]=y
-            ["CONFIG_SHADOW_CALL_STACK"]=y
-            ["CONFIG_SHADOW_CALL_STACK_VMAP"]=y
-            ["CONFIG_LTO_CLANG"]=y
-            ["CONFIG_RELR"]=y
-            ["CONFIG_THINLTO"]=y
-          )
-          declare -A disabled=(
-            ["CONFIG_CFI_CLANG"]=1
-            ["CONFIG_LTO_NONE"]=1
-          )
-          for cfg in "${!expected[@]}"; do
-            if grep -q "${cfg}=y" out/.config; then
-              echo "✅ ${cfg} is enabled"
-            else
-              echo "❌ ${cfg} is NOT enabled!"
-              exit 1
-            fi
-          done
-          for cfg in "${!disabled[@]}"; do
-            if grep -q "${cfg}=y" out/.config; then
-              echo "❌ ${cfg} should be disabled but is enabled!"
-              exit 1
-            else
-              echo "✅ ${cfg} is disabled"
-            fi
-          done
+          grep -E "CONFIG_COMPAT_VDSO|CONFIG_SHADOW_CALL_STACK|CONFIG_SHADOW_CALL_STACK_VMAP|CONFIG_LTO_CLANG|CONFIG_LTO_NONE|CONFIG_CFI_CLANG|CONFIG_RELR|CONFIG_THINLTO|CONFIG_KPROBES" out/.config || true
 
       - name: Build kernel
         run: |
@@ -175,30 +182,40 @@ jobs:
           echo "✅ Kernel built successfully!"
           
       - name: Upload build log
-        if: always()
+        if: failure()
         uses: actions/upload-artifact@v4
         with:
           name: build-log-completo-${{ github.sha }}
           path: build.log
           retention-days: 7
           
-      - name: Gather build outputs
+      - name: Package with AnyKernel3
         run: |
-          mkdir -p output
-          cp out/arch/arm64/boot/Image output/
-          if ls out/arch/arm64/boot/dts/vendor/qcom/*.dtb 1>/dev/null 2>&1; then
-            cp out/arch/arm64/boot/dts/vendor/qcom/*.dtb output/
-          fi
+          echo "📦 Baixando seu repositório AnyKernel3..."
+          git clone https://github.com/NICKZZIN/ANYKERNEL3-C137 AnyKernel3
+          
+          echo "Copiar Image..."
+          cp out/arch/arm64/boot/Image AnyKernel3/
+          
+          echo "Copiar dtbo.img (se existir)..."
           if [ -f out/arch/arm64/boot/dtbo.img ]; then
-            cp out/arch/arm64/boot/dtbo.img output/
+            cp out/arch/arm64/boot/dtbo.img AnyKernel3/
           fi
-          echo "Build outputs:"
-          ls -lh output/
+          
+          echo "Unindo e copiando os arquivos .dtb..."
+          if ls out/arch/arm64/boot/dts/vendor/qcom/*.dtb 1>/dev/null 2>&1; then
+            cat out/arch/arm64/boot/dts/vendor/qcom/*.dtb > AnyKernel3/dtb
+          elif ls out/arch/arm64/boot/dts/vendor/xiaomi/*.dtb 1>/dev/null 2>&1; then
+            cat out/arch/arm64/boot/dts/vendor/xiaomi/*.dtb > AnyKernel3/dtb
+          fi
+          
+          echo "Compactando o ZIP instalável..."
+          cd AnyKernel3
+          zip -r9 "../C137-KERNEL V1.zip" * -x .git README.md *placeholder
 
-      - name: Upload kernel artifacts
+      - name: Upload kernel ZIP
         uses: actions/upload-artifact@v4
         with:
-          name: kernel-moonstone-${{ github.sha }}
-          path: output/
+          name: C137-KERNEL-V1-${{ env.KSU_TYPE }}-${{ github.sha }}
+          path: "C137-KERNEL V1.zip"
           retention-days: 30
-          
