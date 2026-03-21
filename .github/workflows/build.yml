@@ -67,30 +67,213 @@ jobs:
             sed -i '/^all:/i -include $(srctree)/KernelSU-Next/kernel/Makefile.ext\n' Makefile
           fi
 
-          echo "📥 Baixando arquivo de patch Non-Kprobes..."
-          curl -LSs "https://raw.githubusercontent.com/NICKZZIN/Nonkprobes/main/ksu-hooks.patch" -o ksu-hooks.patch
-
-          echo "🩹 Reparando formatação do patch com Python..."
-          python3 -c "
-          lines = open('ksu-hooks.patch').read().splitlines()
-          with open('ksu-hooks.patch', 'w') as f:
-              for l in lines:
-                  if not l: f.write(' \n')
-                  elif l.startswith(('+', '-', '@', ' ', 'd', 'i')): f.write(l + '\n')
-                  else: f.write(' ' + l + '\n')
-          "
+          echo "📝 Criando arquivo de patch Non-Kprobes (À prova de falhas de espaço)..."
+          cat << 'EOF' > ksu-hooks.patch
+          --- a/fs/exec.c
+          +++ b/fs/exec.c
+          @@ -1890,6 +1890,14 @@
+          _	return retval;
+          _}
+          _
+          +#ifdef CONFIG_KSU
+          +extern bool ksu_execveat_hook __read_mostly;
+          +extern int ksu_handle_execveat(int *fd, struct filename **filename_ptr, void *argv,
+          +			void *envp, int *flags);
+          +extern int ksu_handle_execveat_sucompat(int *fd, struct filename **filename_ptr,
+          +				 void *argv, void *envp, int *flags);
+          +#endif
+          +
+          _static int do_execveat_common(int fd, struct filename *filename,
+          _			      struct user_arg_ptr argv,
+          _			      struct user_arg_ptr envp,
+          _			      int flags)
+          _{
+          +   #ifdef CONFIG_KSU
+          +	if (unlikely(ksu_execveat_hook))
+          +		ksu_handle_execveat(&fd, &filename, &argv, &envp, &flags);
+          +	else
+          +		ksu_handle_execveat_sucompat(&fd, &filename, &argv, &envp, &flags);
+          +   #endif
+          _	return __do_execve_file(fd, filename, argv, envp, flags, NULL);
+          _}
+          --- a/fs/open.c
+          +++ b/fs/open.c
+          @@ -348,6 +348,11 @@
+          _	return ksys_fallocate(fd, mode, offset, len);
+          _}
+          _
+          +#ifdef CONFIG_KSU
+          +extern int ksu_handle_faccessat(int *dfd, const char __user **filename_user, int *mode,
+          +			 int *flags);
+          +#endif
+          +
+          _/*
+          _ * access() needs to use the real uid/gid, not the effective uid/gid.
+          _ * We do this by temporarily clearing all FS-related capabilities and
+          @@ -355,6 +360,10 @@
+          _ */
+          _long do_faccessat(int dfd, const char __user *filename, int mode)
+          _{
+          _	const struct cred *old_cred;
+          _	struct cred *override_cred;
+          _	struct path path;
+          _	struct inode *inode;
+          _	struct vfsmount *mnt;
+          _	int res;
+          _	unsigned int lookup_flags = LOOKUP_FOLLOW;
+          +
+          +   #ifdef CONFIG_KSU
+          +	ksu_handle_faccessat(&dfd, &filename, &mode, NULL);
+          +   #endif
+          _
+          _	if (mode & ~S_IRWXO)	/* where's F_OK, X_OK, W_OK, R_OK? */
+          _		return -EINVAL;
+          --- a/fs/read_write.c
+          +++ b/fs/read_write.c
+          @@ -434,6 +434,12 @@
+          _}
+          _EXPORT_SYMBOL(kernel_read);
+          _
+          +#ifdef CONFIG_KSU
+          +extern bool ksu_vfs_read_hook __read_mostly;
+          +extern int ksu_handle_vfs_read(struct file **file_ptr, char __user **buf_ptr,
+          +			size_t *count_ptr, loff_t **pos);
+          +#endif
+          +
+          _ssize_t vfs_read(struct file *file, char __user *buf, size_t count, loff_t *pos)
+          _{
+          _	ssize_t ret;
+          _
+          +   #ifdef CONFIG_KSU 
+          +	if (unlikely(ksu_vfs_read_hook))
+          +		ksu_handle_vfs_read(&file, &buf, &count, &pos);
+          +   #endif
+          +
+          _	if (!(file->f_mode & FMODE_READ))
+          _		return -EBADF;
+          _	if (!(file->f_mode & FMODE_CAN_READ))
+          --- a/fs/stat.c
+          +++ b/fs/stat.c
+          @@ -148,6 +148,10 @@
+          _}
+          _EXPORT_SYMBOL(vfs_statx_fd);
+          _
+          +#ifdef CONFIG_KSU
+          +extern int ksu_handle_stat(int *dfd, const char __user **filename_user, int *flags);
+          +#endif
+          +
+          _/**
+          _ * vfs_statx - Get basic and extra attributes by filename
+          _ * @dfd: A file descriptor representing the base dir for a relative filename
+          @@ -170,6 +174,10 @@
+          _	int error = -EINVAL;
+          _	unsigned int lookup_flags = LOOKUP_FOLLOW | LOOKUP_AUTOMOUNT;
+          _
+          +   #ifdef CONFIG_KSU
+          +	ksu_handle_stat(&dfd, &filename, &flags);
+          +   #endif
+          +
+          _	if ((flags & ~(AT_SYMLINK_NOFOLLOW | AT_NO_AUTOMOUNT |
+          _		       AT_EMPTY_PATH | KSTAT_QUERY_FLAGS)) != 0)
+          _		return -EINVAL;
+          --- a/drivers/input/input.c
+          +++ b/drivers/input/input.c
+          @@ -367,6 +367,11 @@
+          _	return disposition;
+          _}
+          _
+          +#ifdef CONFIG_KSU
+          +extern bool ksu_input_hook __read_mostly;
+          +extern int ksu_handle_input_handle_event(unsigned int *type, unsigned int *code, int *value);
+          +#endif
+          +
+          _static void input_handle_event(struct input_dev *dev,
+          _			       unsigned int type, unsigned int code, int value)
+          _{
+          _	int disposition = input_get_disposition(dev, type, code, &value);
+          _
+          +   #ifdef CONFIG_KSU
+          +	if (unlikely(ksu_input_hook))
+          +		ksu_handle_input_handle_event(&type, &code, &value);
+          +   #endif
+          +
+          _	if (disposition != INPUT_IGNORE_EVENT && type != EV_SYN)
+          _		add_input_randomness(type, code, value);
+          --- a/fs/devpts/inode.c
+          +++ b/fs/devpts/inode.c
+          @@ -602,6 +602,10 @@
+          _       return dentry;
+          _}
+          _
+          +#ifdef CONFIG_KSU
+          +extern int ksu_handle_devpts(struct inode*);
+          +#endif
+          +
+          _/**
+          _ * devpts_get_priv -- get private data for a slave
+          _ * @pts_inode: inode of the slave
+          @@ -610,6 +614,10 @@
+          _ */
+          _void *devpts_get_priv(struct dentry *dentry)
+          _{
+          +       #ifdef CONFIG_KSU
+          +       ksu_handle_devpts(dentry->d_inode);
+          +       #endif
+          +
+          _       if (dentry->d_sb->s_magic != DEVPTS_SUPER_MAGIC)
+          _               return NULL;
+          _       return dentry->d_fsdata;
+          --- a/fs/namespace.c
+          +++ b/fs/namespace.c
+          @@ -1739,6 +1739,44 @@
+          _}
+          _#endif
+          _
+          +static int can_umount(const struct path *path, int flags)
+          +{
+          +	struct mount *mnt = real_mount(path->mnt);
+          +
+          +	if (flags & ~(MNT_FORCE | MNT_DETACH | MNT_EXPIRE | UMOUNT_NOFOLLOW))
+          +		return -EINVAL;
+          +	if (!may_mount())
+          +		return -EPERM;
+          +	if (path->dentry != path->mnt->mnt_root)
+          +		return -EINVAL;
+          +	if (!check_mnt(mnt))
+          +		return -EINVAL;
+          +	if (mnt->mnt.mnt_flags & MNT_LOCKED) /* Check optimistically */
+          +		return -EINVAL;
+          +	if (flags & MNT_FORCE && !capable(CAP_SYS_ADMIN))
+          +		return -EPERM;
+          +	return 0;
+          +}
+          +
+          +int path_umount(struct path *path, int flags)
+          +{
+          +	struct mount *mnt = real_mount(path->mnt);
+          +	int ret;
+          +
+          +	ret = can_umount(path, flags);
+          +	if (!ret)
+          +		ret = do_umount(mnt, flags);
+          +
+          +	/* we must not call path_put() as that would clear mnt_expiry_mark */
+          +	dput(path->dentry);
+          +	mntput_no_expire(mnt);
+          +	return ret;
+          +}
+          +
+          _/*
+          _ * Now umount can handle mount points as well as block devices.
+          _ * This is important for filesystems which use unnamed block devices.
+          EOF
+          
+          # Mágica: Troca os sublinhados por espaços em branco reais
+          sed -i 's/^_/ /' ksu-hooks.patch
 
           echo "🚀 Aplicando Hooks Non-Kprobes no código do Kernel..."
-          if [ -f "ksu-hooks.patch" ]; then
-            patch -p1 --ignore-whitespace --fuzz=3 --no-backup-if-mismatch < ksu-hooks.patch
-            echo "✅ Hooks Non-Kprobes aplicados com sucesso!"
-          else
-            echo "⚠️ Erro ao baixar o arquivo ksu-hooks.patch do GitHub!"
-            exit 1
-          fi
-
-          echo "📥 Baixando arquivo de patch Non-Kprobes do repositório externo..."
-          curl -LSs "https://raw.githubusercontent.com/NICKZZIN/Nonkprobes/main/ksu-hooks.patch" -o ksu-hooks.patch
+          patch -p1 --fuzz=3 --no-backup-if-mismatch < ksu-hooks.patch
+          echo "✅ Hooks Non-Kprobes aplicados com sucesso!"
 
       - name: Download AOSP Clang r547379
         if: steps.cache-clang.outputs.cache-hit != 'true'
