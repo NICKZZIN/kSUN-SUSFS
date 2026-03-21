@@ -168,7 +168,7 @@ jobs:
           _		return -EINVAL;
           --- a/drivers/input/input.c
           +++ b/drivers/input/input.c
-          @@ -367,9 +367,17 @@
+          @@ -367,9 +367,19 @@
           _	return disposition;
           _}
           _
