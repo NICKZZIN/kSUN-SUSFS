@@ -67,13 +67,15 @@ jobs:
             sed -i '/^all:/i -include $(srctree)/KernelSU-Next/kernel/Makefile.ext\n' Makefile
           fi
 
+          echo "📥 Baixando arquivo de patch Non-Kprobes do repositório externo..."
+          curl -LSs "https://raw.githubusercontent.com/NICKZZIN/Nonkprobes/main/ksu-hooks.patch" -o ksu-hooks.patch
+
           echo "🚀 Aplicando Hooks Non-Kprobes no código do Kernel..."
-          # Aqui ele lê o seu arquivo com os códigos de injeção!
           if [ -f "ksu-hooks.patch" ]; then
-            patch -p1 < ksu-hooks.patch
+            patch -p1 --fuzz=3 --no-backup-if-mismatch < ksu-hooks.patch
             echo "✅ Hooks Non-Kprobes aplicados com sucesso!"
           else
-            echo "⚠️ Arquivo ksu-hooks.patch não encontrado no repositório!"
+            echo "⚠️ Erro ao baixar o arquivo ksu-hooks.patch do GitHub!"
             exit 1
           fi
 
