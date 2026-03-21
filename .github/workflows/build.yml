@@ -67,16 +67,22 @@ jobs:
             sed -i '/^all:/i -include $(srctree)/KernelSU-Next/kernel/Makefile.ext\n' Makefile
           fi
 
-          echo "📥 Baixando arquivo de patch Non-Kprobes do repositório externo..."
+          echo "📥 Baixando arquivo de patch Non-Kprobes..."
           curl -LSs "https://raw.githubusercontent.com/NICKZZIN/Nonkprobes/main/ksu-hooks.patch" -o ksu-hooks.patch
 
-          echo "🩹 Reparando formatação do patch (corrigindo espaços do GitHub)..."
-          sed -i 's/\r//g' ksu-hooks.patch
-          sed -i -e '/^[^+ @-]/ s/^/ /' -e 's/^$/ /' ksu-hooks.patch
+          echo "🩹 Reparando formatação do patch com Python..."
+          python3 -c "
+          lines = open('ksu-hooks.patch').read().splitlines()
+          with open('ksu-hooks.patch', 'w') as f:
+              for l in lines:
+                  if not l: f.write(' \n')
+                  elif l.startswith(('+', '-', '@', ' ', 'd', 'i')): f.write(l + '\n')
+                  else: f.write(' ' + l + '\n')
+          "
 
           echo "🚀 Aplicando Hooks Non-Kprobes no código do Kernel..."
           if [ -f "ksu-hooks.patch" ]; then
-            patch -p1 --fuzz=3 --no-backup-if-mismatch < ksu-hooks.patch
+            patch -p1 --ignore-whitespace --fuzz=3 --no-backup-if-mismatch < ksu-hooks.patch
             echo "✅ Hooks Non-Kprobes aplicados com sucesso!"
           else
             echo "⚠️ Erro ao baixar o arquivo ksu-hooks.patch do GitHub!"
