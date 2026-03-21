@@ -54,8 +54,8 @@ jobs:
       - name: Setup KernelSU / KernelSU-Next & Non-Kprobes
         if: env.KSU_TYPE != 'None'
         run: |
-          if [ "$KSU_TYPE" == "KernelSU (Julival)" ]; then
-            echo "✅ Baixando KernelSU (Julival)..."
+          if [ "$KSU_TYPE" == "KernelSU" ]; then
+            echo "✅ Baixando KernelSU..."
             # ATENÇÃO: Se o link exato do Julival que você usava for um pouco diferente, substitua na linha abaixo!
             curl -LSs "https://raw.githubusercontent.com/bittencourtjulival/KernelSU/master/kernel/setup.sh" | bash -s
             echo "🔧 Injetando Makefile.ext no Makefile raiz..."
