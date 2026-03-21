@@ -54,21 +54,30 @@ jobs:
       - name: Setup KernelSU / KernelSU-Next & Non-Kprobes
         if: env.KSU_TYPE != 'None'
         run: |
+          - name: Setup KernelSU / KernelSU-Next & Non-Kprobes
+        if: env.KSU_TYPE != 'Nonksu'
+        run: |
           if [ "$KSU_TYPE" == "KernelSU" ]; then
-            echo "✅ Baixando KernelSU..."
-            # ATENÇÃO: Se o link exato do Julival que você usava for um pouco diferente, substitua na linha abaixo!
-            curl -LSs "https://raw.githubusercontent.com/NICKZZIN/Ksu-c137/master/kernel/setup.sh" | bash -s
-            echo "🔧 Injetando Makefile.ext no Makefile raiz..."
-            sed -i '/^all:/i -include $(srctree)/KernelSU/kernel/Makefile.ext\n' Makefile
-            echo "🔧 Removendo a dependência do KPROBES do Kconfig..."
-            sed -i 's/depends on KPROBES//g' KernelSU/kernel/Kconfig
-          
+            echo "✅ Clonando o seu fork (NICKZZIN/Ksu-c137)..."
+            git clone https://github.com/NICKZZIN/Ksu-c137 KernelSU
+            
+            echo "🔧 Integrando manualmente (Modo Seguro)..."
+            rm -rf drivers/kernelsu
+            cp -r KernelSU/kernel drivers/kernelsu
+            
+            # Garante que o Makefile e Kconfig apontem para o lugar certo
+            grep -q "CONFIG_KSU" drivers/Makefile || echo 'obj-$(CONFIG_KSU) += kernelsu/' >> drivers/Makefile
+            grep -q "drivers/kernelsu/Kconfig" drivers/Kconfig || echo 'source "drivers/kernelsu/Kconfig"' >> drivers/Kconfig
+
           elif [ "$KSU_TYPE" == "KernelSU-Next" ]; then
             echo "✅ Baixando KernelSU-Next..."
             curl -LSs "https://raw.githubusercontent.com/KernelSU-Next/KernelSU-Next/next/kernel/setup.sh" | bash -s
+            
             echo "🔧 Injetando Makefile.ext no Makefile raiz..."
             sed -i '/^all:/i -include $(srctree)/KernelSU-Next/kernel/Makefile.ext\n' Makefile
-            echo "🔧 Removendo a dependência do KPROBES do Kconfig..."
+            
+            echo "🔧 Removendo a dependência do KPROBES do Kconfig do Next..."
+            # O Next costuma ficar na pasta KernelSU-Next/kernel/
             sed -i 's/depends on KPROBES//g' KernelSU-Next/kernel/Kconfig
           fi
 
