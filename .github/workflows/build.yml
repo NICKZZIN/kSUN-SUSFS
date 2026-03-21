@@ -86,15 +86,6 @@ jobs:
           echo "📥 Baixando arquivo de patch Non-Kprobes do repositório externo..."
           curl -LSs "https://raw.githubusercontent.com/NICKZZIN/Nonkprobes/main/ksu-hooks.patch" -o ksu-hooks.patch
 
-          echo "🚀 Aplicando Hooks Non-Kprobes no código do Kernel..."
-          if [ -f "ksu-hooks.patch" ]; then
-            patch -p1 --fuzz=3 --no-backup-if-mismatch < ksu-hooks.patch
-            echo "✅ Hooks Non-Kprobes aplicados com sucesso!"
-          else
-            echo "⚠️ Erro ao baixar o arquivo ksu-hooks.patch do GitHub!"
-            exit 1
-          fi
-
       - name: Download AOSP Clang r547379
         if: steps.cache-clang.outputs.cache-hit != 'true'
         run: |
