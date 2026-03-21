@@ -52,9 +52,6 @@ jobs:
           sudo chmod +x /usr/local/bin/mkdtimg
 
       - name: Setup KernelSU / KernelSU-Next & Non-Kprobes
-        if: env.KSU_TYPE != 'None'
-        run: |
-          - name: Setup KernelSU / KernelSU-Next & Non-Kprobes
         if: env.KSU_TYPE != 'Nonksu'
         run: |
           if [ "$KSU_TYPE" == "KernelSU" ]; then
