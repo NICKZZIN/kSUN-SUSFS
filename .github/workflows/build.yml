@@ -59,12 +59,16 @@ jobs:
             curl -LSs "https://raw.githubusercontent.com/tiann/KernelSU/main/kernel/setup.sh" | bash -s
             echo "🔧 Injetando Makefile.ext no Makefile raiz..."
             sed -i '/^all:/i -include $(srctree)/KernelSU/kernel/Makefile.ext\n' Makefile
+            echo "🔧 Removendo a dependência do KPROBES do Kconfig..."
+            sed -i 's/depends on KPROBES//g' KernelSU/kernel/Kconfig
           
           elif [ "$KSU_TYPE" == "KernelSU-Next" ]; then
             echo "✅ Baixando KernelSU-Next..."
             curl -LSs "https://raw.githubusercontent.com/KernelSU-Next/KernelSU-Next/next/kernel/setup.sh" | bash -s
             echo "🔧 Injetando Makefile.ext no Makefile raiz..."
             sed -i '/^all:/i -include $(srctree)/KernelSU-Next/kernel/Makefile.ext\n' Makefile
+            echo "🔧 Removendo a dependência do KPROBES do Kconfig..."
+            sed -i 's/depends on KPROBES//g' KernelSU-Next/kernel/Kconfig
           fi
 
           echo "📝 Criando arquivo de patch Non-Kprobes (À prova de falhas de espaço)..."
@@ -263,6 +267,12 @@ jobs:
           echo "🚀 Aplicando Hooks Non-Kprobes no código do Kernel..."
           patch -p1 --fuzz=3 --no-backup-if-mismatch < ksu-hooks.patch
           echo "✅ Hooks Non-Kprobes aplicados com sucesso!"
+
+          echo "🧹 Limpando o status do Git para remover a tag '-dirty'..."
+          git config --global user.email "bot@github.com"
+          git config --global user.name "GitHub Action"
+          git add .
+          git commit -m "Injetar KernelSU e Non-Kprobes"
           
       - name: Download AOSP Clang r547379
         if: steps.cache-clang.outputs.cache-hit != 'true'
