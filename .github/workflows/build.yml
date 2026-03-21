@@ -11,7 +11,7 @@ on:
         type: choice
         options:
           - None
-          - KernelSU
+          - KernelSU (Oficial)
           - KernelSU-Next
         default: 'None'
 
@@ -51,19 +51,30 @@ jobs:
           sudo cp /tmp/libufdt/utils/src/mkdtboimg.py /usr/local/bin/mkdtimg
           sudo chmod +x /usr/local/bin/mkdtimg
 
-      - name: Setup KernelSU / KernelSU-Next
+      - name: Setup KernelSU / KernelSU-Next & Non-Kprobes
         if: env.KSU_TYPE != 'None'
         run: |
-          if [ "$KSU_TYPE" == "KernelSU" ]; then
-            echo "✅ Aplicando patch do KernelSU (Julival)..."
-            curl -LSs "https://raw.githubusercontent.com/bittencourtjulival/KernelSU/master/kernel/setup.sh" | bash -s
+          if [ "$KSU_TYPE" == "KernelSU (Oficial)" ]; then
+            echo "✅ Baixando KernelSU Oficial (tiann)..."
+            curl -LSs "https://raw.githubusercontent.com/tiann/KernelSU/main/kernel/setup.sh" | bash -s
             echo "🔧 Injetando Makefile.ext no Makefile raiz..."
             sed -i '/^all:/i -include $(srctree)/KernelSU/kernel/Makefile.ext\n' Makefile
+          
           elif [ "$KSU_TYPE" == "KernelSU-Next" ]; then
-            echo "✅ Aplicando patch do KernelSU-Next..."
+            echo "✅ Baixando KernelSU-Next..."
             curl -LSs "https://raw.githubusercontent.com/KernelSU-Next/KernelSU-Next/next/kernel/setup.sh" | bash -s
             echo "🔧 Injetando Makefile.ext no Makefile raiz..."
             sed -i '/^all:/i -include $(srctree)/KernelSU-Next/kernel/Makefile.ext\n' Makefile
+          fi
+
+          echo "🚀 Aplicando Hooks Non-Kprobes no código do Kernel..."
+          # Aqui ele lê o seu arquivo com os códigos de injeção!
+          if [ -f "ksu-hooks.patch" ]; then
+            patch -p1 < ksu-hooks.patch
+            echo "✅ Hooks Non-Kprobes aplicados com sucesso!"
+          else
+            echo "⚠️ Arquivo ksu-hooks.patch não encontrado no repositório!"
+            exit 1
           fi
 
       - name: Download AOSP Clang r547379
@@ -129,13 +140,13 @@ jobs:
             --enable CONFIG_THINLTO
 
           if [ "$KSU_TYPE" != "None" ]; then
-            echo "🔧 Injetando configs do KSU no .config..."
+            echo "🔧 Configurando KernelSU em modo Non-Kprobes no .config..."
             scripts/config --file out/.config \
-              --enable CONFIG_KPROBES \
-              --enable CONFIG_HAVE_KPROBES \
-              --enable CONFIG_KPROBE_EVENTS \
               --enable CONFIG_MODULES \
-              --enable CONFIG_MODULE_UNLOAD
+              --enable CONFIG_MODULE_UNLOAD \
+              --disable CONFIG_KPROBES \
+              --disable CONFIG_HAVE_KPROBES \
+              --disable CONFIG_KPROBE_EVENTS
           fi
 
           make O=out \
