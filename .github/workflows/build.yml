@@ -71,7 +71,7 @@ jobs:
           cat << 'EOF' > ksu-hooks.patch
           --- a/fs/exec.c
           +++ b/fs/exec.c
-          @@ -1890,6 +1890,14 @@
+          @@ -1890,10 +1890,24 @@
           _	return retval;
           _}
           _
@@ -110,7 +110,7 @@ jobs:
           _/*
           _ * access() needs to use the real uid/gid, not the effective uid/gid.
           _ * We do this by temporarily clearing all FS-related capabilities and
-          @@ -355,6 +360,10 @@
+          @@ -355,13 +360,17 @@
           _ */
           _long do_faccessat(int dfd, const char __user *filename, int mode)
           _{
@@ -121,16 +121,16 @@ jobs:
           _	struct vfsmount *mnt;
           _	int res;
           _	unsigned int lookup_flags = LOOKUP_FOLLOW;
-          +
+          _
           +   #ifdef CONFIG_KSU
           +	ksu_handle_faccessat(&dfd, &filename, &mode, NULL);
           +   #endif
-          _
+          +
           _	if (mode & ~S_IRWXO)	/* where's F_OK, X_OK, W_OK, R_OK? */
           _		return -EINVAL;
           --- a/fs/read_write.c
           +++ b/fs/read_write.c
-          @@ -434,6 +434,12 @@
+          @@ -434,10 +434,21 @@
           _}
           _EXPORT_SYMBOL(kernel_read);
           _
@@ -178,7 +178,7 @@ jobs:
           _		return -EINVAL;
           --- a/drivers/input/input.c
           +++ b/drivers/input/input.c
-          @@ -367,6 +367,11 @@
+          @@ -367,10 +367,19 @@
           _	return disposition;
           _}
           _
@@ -225,7 +225,7 @@ jobs:
           _       return dentry->d_fsdata;
           --- a/fs/namespace.c
           +++ b/fs/namespace.c
-          @@ -1739,6 +1739,44 @@
+          @@ -1739,6 +1739,40 @@
           _}
           _#endif
           _
@@ -274,7 +274,6 @@ jobs:
           echo "🚀 Aplicando Hooks Non-Kprobes no código do Kernel..."
           patch -p1 --fuzz=3 --no-backup-if-mismatch < ksu-hooks.patch
           echo "✅ Hooks Non-Kprobes aplicados com sucesso!"
-
       - name: Download AOSP Clang r547379
         if: steps.cache-clang.outputs.cache-hit != 'true'
         run: |
