@@ -110,17 +110,7 @@ jobs:
           _/*
           _ * access() needs to use the real uid/gid, not the effective uid/gid.
           _ * We do this by temporarily clearing all FS-related capabilities and
-          @@ -355,13 +360,17 @@
-          _ */
-          _long do_faccessat(int dfd, const char __user *filename, int mode)
-          _{
-          _	const struct cred *old_cred;
-          _	struct cred *override_cred;
-          _	struct path path;
-          _	struct inode *inode;
-          _	struct vfsmount *mnt;
-          _	int res;
-          _	unsigned int lookup_flags = LOOKUP_FOLLOW;
+          @@ -367,3 +372,7 @@
           _
           +   #ifdef CONFIG_KSU
           +	ksu_handle_faccessat(&dfd, &filename, &mode, NULL);
@@ -178,7 +168,7 @@ jobs:
           _		return -EINVAL;
           --- a/drivers/input/input.c
           +++ b/drivers/input/input.c
-          @@ -367,10 +367,19 @@
+          @@ -367,9 +367,17 @@
           _	return disposition;
           _}
           _
@@ -198,7 +188,6 @@ jobs:
           +   #endif
           +
           _	if (disposition != INPUT_IGNORE_EVENT && type != EV_SYN)
-          _		add_input_randomness(type, code, value);
           --- a/fs/devpts/inode.c
           +++ b/fs/devpts/inode.c
           @@ -602,6 +602,10 @@
@@ -274,6 +263,7 @@ jobs:
           echo "🚀 Aplicando Hooks Non-Kprobes no código do Kernel..."
           patch -p1 --fuzz=3 --no-backup-if-mismatch < ksu-hooks.patch
           echo "✅ Hooks Non-Kprobes aplicados com sucesso!"
+          
       - name: Download AOSP Clang r547379
         if: steps.cache-clang.outputs.cache-hit != 'true'
         run: |
