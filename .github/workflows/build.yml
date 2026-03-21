@@ -4,18 +4,6 @@ on:
   push:
     branches: [ lineage-23.2 ]
   workflow_dispatch:
-    inputs:
-      ksu_type:
-        description: 'Qual versão do KernelSU incluir?'
-        required: true
-        type: choice
-        options:
-          - Nonksu
-          - KernelSU
-        default: 'Nonksu'
-
-env:
-  KSU_TYPE: ${{ github.event.inputs.ksu_type || 'None' }}
 
 jobs:
   build:
@@ -50,186 +38,6 @@ jobs:
           sudo cp /tmp/libufdt/utils/src/mkdtboimg.py /usr/local/bin/mkdtimg
           sudo chmod +x /usr/local/bin/mkdtimg
 
-      - name: Setup KernelSU / KernelSU-Next & Non-Kprobes
-        if: env.KSU_TYPE != 'Nonksu'
-        run: |
-          if [ "$KSU_TYPE" == "KernelSU" ]; then
-            echo "✅ Clonando o seu fork (NICKZZIN/Ksu-c137)..."
-            git clone https://github.com/NICKZZIN/Ksu-c137 KernelSU
-            
-            echo "🔧 Integrando manualmente (Modo Seguro)..."
-            rm -rf drivers/kernelsu
-            cp -r KernelSU/kernel drivers/kernelsu
-            
-            # Garante que o Makefile e Kconfig apontem para o lugar certo
-            grep -q "CONFIG_KSU" drivers/Makefile || echo 'obj-$(CONFIG_KSU) += kernelsu/' >> drivers/Makefile
-            grep -q "drivers/kernelsu/Kconfig" drivers/Kconfig || echo 'source "drivers/kernelsu/Kconfig"' >> drivers/Kconfig
-          fi
-
-          echo "📝 Criando arquivo de patch Non-Kprobes (Modo Externs)..."
-          cat << 'EOF' > ksu-hooks.patch
-          --- a/fs/exec.c
-          +++ b/fs/exec.c
-          @@ -1890,10 +1890,24 @@
-          _	return retval;
-          _}
-          _
-          +#ifdef CONFIG_KSU
-          +extern bool ksu_execveat_hook __read_mostly;
-          +extern int ksu_handle_execveat(int *fd, struct filename **filename_ptr, void *argv,
-          +			void *envp, int *flags);
-          +extern int ksu_handle_execveat_sucompat(int *fd, struct filename **filename_ptr,
-          +				 void *argv, void *envp, int *flags);
-          +#endif
-          +
-          _static int do_execveat_common(int fd, struct filename *filename,
-          _			      struct user_arg_ptr argv,
-          _			      struct user_arg_ptr envp,
-          _			      int flags)
-          _{
-          +   #ifdef CONFIG_KSU
-          +	if (unlikely(ksu_execveat_hook))
-          +		ksu_handle_execveat(&fd, &filename, &argv, &envp, &flags);
-          +	else
-          +		ksu_handle_execveat_sucompat(&fd, &filename, &argv, &envp, &flags);
-          +   #endif
-          _	return __do_execve_file(fd, filename, argv, envp, flags, NULL);
-          _}
-          --- a/fs/open.c
-          +++ b/fs/open.c
-          @@ -348,6 +348,11 @@
-          _	return ksys_fallocate(fd, mode, offset, len);
-          _}
-          _
-          +#ifdef CONFIG_KSU
-          +extern int ksu_handle_faccessat(int *dfd, const char __user **filename_user, int *mode,
-          +			 int *flags);
-          +#endif
-          +
-          _/*
-          _ * access() needs to use the real uid/gid, not the effective uid/gid.
-          _ * We do this by temporarily clearing all FS-related capabilities and
-          @@ -367,3 +372,7 @@
-          _
-          +   #ifdef CONFIG_KSU
-          +	ksu_handle_faccessat(&dfd, &filename, &mode, NULL);
-          +   #endif
-          +
-          _	if (mode & ~S_IRWXO)	/* where's F_OK, X_OK, W_OK, R_OK? */
-          _		return -EINVAL;
-          --- a/fs/read_write.c
-          +++ b/fs/read_write.c
-          @@ -434,10 +434,21 @@
-          _}
-          _EXPORT_SYMBOL(kernel_read);
-          _
-          +#ifdef CONFIG_KSU
-          +extern bool ksu_vfs_read_hook __read_mostly;
-          +extern int ksu_handle_vfs_read(struct file **file_ptr, char __user **buf_ptr,
-          +			size_t *count_ptr, loff_t **pos);
-          +#endif
-          +
-          _ssize_t vfs_read(struct file *file, char __user *buf, size_t count, loff_t *pos)
-          _{
-          _	ssize_t ret;
-          _
-          +   #ifdef CONFIG_KSU 
-          +	if (unlikely(ksu_vfs_read_hook))
-          +		ksu_handle_vfs_read(&file, &buf, &count, &pos);
-          +   #endif
-          +
-          _	if (!(file->f_mode & FMODE_READ))
-          _		return -EBADF;
-          _	if (!(file->f_mode & FMODE_CAN_READ))
-          --- a/fs/stat.c
-          +++ b/fs/stat.c
-          @@ -148,6 +148,10 @@
-          _}
-          _EXPORT_SYMBOL(vfs_statx_fd);
-          _
-          +#ifdef CONFIG_KSU
-          +extern int ksu_handle_stat(int *dfd, const char __user **filename_user, int *flags);
-          +#endif
-          +
-          _/**
-          _ * vfs_statx - Get basic and extra attributes by filename
-          _ * @dfd: A file descriptor representing the base dir for a relative filename
-          @@ -170,6 +174,10 @@
-          _	int error = -EINVAL;
-          _	unsigned int lookup_flags = LOOKUP_FOLLOW | LOOKUP_AUTOMOUNT;
-          _
-          +   #ifdef CONFIG_KSU
-          +	ksu_handle_stat(&dfd, &filename, &flags);
-          +   #endif
-          +
-          _	if ((flags & ~(AT_SYMLINK_NOFOLLOW | AT_NO_AUTOMOUNT |
-          _		       AT_EMPTY_PATH | KSTAT_QUERY_FLAGS)) != 0)
-          _		return -EINVAL;
-          --- a/drivers/input/input.c
-          +++ b/drivers/input/input.c
-          @@ -367,9 +367,19 @@
-          _	return disposition;
-          _}
-          _
-          +#ifdef CONFIG_KSU
-          +extern bool ksu_input_hook __read_mostly;
-          +extern int ksu_handle_input_handle_event(unsigned int *type, unsigned int *code, int *value);
-          +#endif
-          +
-          _static void input_handle_event(struct input_dev *dev,
-          _			       unsigned int type, unsigned int code, int value)
-          _{
-          _	int disposition = input_get_disposition(dev, type, code, &value);
-          _
-          +   #ifdef CONFIG_KSU
-          +	if (unlikely(ksu_input_hook))
-          +		ksu_handle_input_handle_event(&type, &code, &value);
-          +   #endif
-          +
-          _	if (disposition != INPUT_IGNORE_EVENT && type != EV_SYN)
-          --- a/fs/devpts/inode.c
-          +++ b/fs/devpts/inode.c
-          @@ -602,6 +602,10 @@
-          _       return dentry;
-          _}
-          _
-          +#ifdef CONFIG_KSU
-          +extern int ksu_handle_devpts(struct inode*);
-          +#endif
-          +
-          _/**
-          _ * devpts_get_priv -- get private data for a slave
-          _ * @pts_inode: inode of the slave
-          @@ -610,6 +614,10 @@
-          _ */
-          _void *devpts_get_priv(struct dentry *dentry)
-          _{
-          +       #ifdef CONFIG_KSU
-          +       ksu_handle_devpts(dentry->d_inode);
-          +       #endif
-          +
-          _       if (dentry->d_sb->s_magic != DEVPTS_SUPER_MAGIC)
-          _               return NULL;
-          _       return dentry->d_fsdata;
-          EOF
-          
-          # Mágica ATUALIZADA: Limpa os espaços do YAML e formata o diff perfeitamente
-          sed -i 's/^ *---/---/' ksu-hooks.patch
-          sed -i 's/^ *+++/+++/' ksu-hooks.patch
-          sed -i 's/^ *@@/@@/' ksu-hooks.patch
-          sed -i 's/^ *+/\+/' ksu-hooks.patch
-          sed -i 's/^ *_/ /' ksu-hooks.patch
-          
-          echo "🚀 Aplicando Hooks Non-Kprobes no código do Kernel..."
-          patch -p1 --fuzz=3 --no-backup-if-mismatch < ksu-hooks.patch
-          echo "✅ Hooks Non-Kprobes aplicados com sucesso!"
-
-          echo "🧹 Limpando o status do Git para remover a tag '-dirty'..."
-          git config --global user.email "bot@github.com"
-          git config --global user.name "GitHub Action"
-          git add .
-          git commit -m "Injetar KernelSU e Non-Kprobes"
-          
       - name: Download AOSP Clang r547379
         if: steps.cache-clang.outputs.cache-hit != 'true'
         run: |
@@ -282,6 +90,7 @@ jobs:
 
       - name: Configure kernel options
         run: |
+          # Enable options without modifying defconfig
           scripts/config --file out/.config \
             --enable CONFIG_COMPAT_VDSO \
             --enable CONFIG_SHADOW_CALL_STACK \
@@ -292,17 +101,7 @@ jobs:
             --enable CONFIG_RELR \
             --enable CONFIG_THINLTO
 
-          if [ "$KSU_TYPE" != "None" ]; then
-            echo "🔧 Configurando KernelSU em modo Non-Kprobes no .config..."
-            scripts/config --file out/.config \
-              --enable CONFIG_KSU \
-              --enable CONFIG_MODULES \
-              --enable CONFIG_MODULE_UNLOAD \
-              --disable CONFIG_KPROBES \
-              --disable CONFIG_HAVE_KPROBES \
-              --disable CONFIG_KPROBE_EVENTS
-          fi
-
+          # Resolve dependencies non-interactively
           make O=out \
             ARCH=arm64 \
             CC=clang \
@@ -315,8 +114,37 @@ jobs:
       - name: Verify kernel config
         run: |
           echo "=== Checking critical configs ==="
-          grep -E "CONFIG_COMPAT_VDSO|CONFIG_LTO_CLANG|CONFIG_KPROBES|CONFIG_KSU" out/.config || true
-          
+          grep -E "CONFIG_COMPAT_VDSO|CONFIG_SHADOW_CALL_STACK|CONFIG_SHADOW_CALL_STACK_VMAP|CONFIG_LTO_CLANG|CONFIG_LTO_NONE|CONFIG_CFI_CLANG|CONFIG_RELR|CONFIG_THINLTO" out/.config
+          echo ""
+          declare -A expected=(
+            ["CONFIG_COMPAT_VDSO"]=y
+            ["CONFIG_SHADOW_CALL_STACK"]=y
+            ["CONFIG_SHADOW_CALL_STACK_VMAP"]=y
+            ["CONFIG_LTO_CLANG"]=y
+            ["CONFIG_RELR"]=y
+            ["CONFIG_THINLTO"]=y
+          )
+          declare -A disabled=(
+            ["CONFIG_CFI_CLANG"]=1
+            ["CONFIG_LTO_NONE"]=1
+          )
+          for cfg in "${!expected[@]}"; do
+            if grep -q "${cfg}=y" out/.config; then
+              echo "✅ ${cfg} is enabled"
+            else
+              echo "❌ ${cfg} is NOT enabled!"
+              exit 1
+            fi
+          done
+          for cfg in "${!disabled[@]}"; do
+            if grep -q "${cfg}=y" out/.config; then
+              echo "❌ ${cfg} should be disabled but is enabled!"
+              exit 1
+            else
+              echo "✅ ${cfg} is disabled"
+            fi
+          done
+
       - name: Build kernel
         run: |
           export ARCH=arm64
@@ -347,39 +175,32 @@ jobs:
           echo "✅ Kernel built successfully!"
           
       - name: Upload build log
-        if: failure()
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: build-log-completo-${{ github.sha }}
           path: build.log
           retention-days: 7
           
-      - name: Package with AnyKernel3
+      - name: Gather build outputs
         run: |
-          echo "📦 Baixando seu repositório AnyKernel3..."
-          git clone https://github.com/NICKZZIN/ANYKERNEL3-C137 AnyKernel3
-          
-          echo "Copiar Image..."
-          cp out/arch/arm64/boot/Image AnyKernel3/
-          
-          echo "Copiar dtbo.img..."
-          if [ -f out/arch/arm64/boot/dtbo.img ]; then
-            cp out/arch/arm64/boot/dtbo.img AnyKernel3/
-          fi
-          
-          echo "Unindo arquivos .dtb..."
+          mkdir -p output
+          cp out/arch/arm64/boot/Image output/
           if ls out/arch/arm64/boot/dts/vendor/qcom/*.dtb 1>/dev/null 2>&1; then
-            cat out/arch/arm64/boot/dts/vendor/qcom/*.dtb > AnyKernel3/dtb
-          elif ls out/arch/arm64/boot/dts/vendor/xiaomi/*.dtb 1>/dev/null 2>&1; then
-            cat out/arch/arm64/boot/dts/vendor/xiaomi/*.dtb > AnyKernel3/dtb
+            cp out/arch/arm64/boot/dts/vendor/qcom/*.dtb output/
           fi
-          
-          echo "Limpando lixo do repositório..."
-          rm -rf AnyKernel3/.git AnyKernel3/README.md AnyKernel3/*placeholder
+          if ls out/arch/arm64/boot/dts/vendor/xiaomi/*.dtb 1>/dev/null 2>&1; then
+            cp out/arch/arm64/boot/dts/vendor/xiaomi/*.dtb output/
+          fi
+          if [ -f out/arch/arm64/boot/dtbo.img ]; then
+            cp out/arch/arm64/boot/dtbo.img output/
+          fi
+          echo "Build outputs:"
+          ls -lh output/
 
-      - name: Upload kernel ZIP
+      - name: Upload kernel artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: C137-KERNEL-V1-${{ env.KSU_TYPE }}-${{ github.sha }}
-          path: AnyKernel3/*
+          name: kernel-moonstone-${{ github.sha }}
+          path: output/
           retention-days: 30
