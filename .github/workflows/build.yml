@@ -12,7 +12,6 @@ on:
         options:
           - Nonksu
           - KernelSU
-          - KernelSU-Next
         default: 'Nonksu'
 
 env:
@@ -65,16 +64,6 @@ jobs:
             # Garante que o Makefile e Kconfig apontem para o lugar certo
             grep -q "CONFIG_KSU" drivers/Makefile || echo 'obj-$(CONFIG_KSU) += kernelsu/' >> drivers/Makefile
             grep -q "drivers/kernelsu/Kconfig" drivers/Kconfig || echo 'source "drivers/kernelsu/Kconfig"' >> drivers/Kconfig
-
-          elif [ "$KSU_TYPE" == "KernelSU-Next" ]; then
-            echo "✅ Baixando KernelSU-Next..."
-            curl -LSs "https://raw.githubusercontent.com/KernelSU-Next/KernelSU-Next/next/kernel/setup.sh" | bash -s
-            
-            echo "🔧 Injetando Makefile.ext no Makefile raiz..."
-            sed -i '/^all:/i -include $(srctree)/KernelSU-Next/kernel/Makefile.ext\n' Makefile
-            
-            echo "🔧 Removendo a dependência do KPROBES do Kconfig do Next..."
-            sed -i 's/depends on KPROBES//g' KernelSU-Next/kernel/Kconfig
           fi
 
           echo "📝 Criando arquivo de patch Non-Kprobes (Modo Externs)..."
