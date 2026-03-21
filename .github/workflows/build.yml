@@ -11,7 +11,7 @@ on:
         type: choice
         options:
           - None
-          - KernelSU (Oficial)
+          - KernelSU (Julival)
           - KernelSU-Next
         default: 'None'
 
@@ -54,9 +54,10 @@ jobs:
       - name: Setup KernelSU / KernelSU-Next & Non-Kprobes
         if: env.KSU_TYPE != 'None'
         run: |
-          if [ "$KSU_TYPE" == "KernelSU (Oficial)" ]; then
-            echo "✅ Baixando KernelSU Oficial (tiann)..."
-            curl -LSs "https://raw.githubusercontent.com/tiann/KernelSU/main/kernel/setup.sh" | bash -s v0.9.5
+          if [ "$KSU_TYPE" == "KernelSU (Julival)" ]; then
+            echo "✅ Baixando KernelSU (Julival)..."
+            # ATENÇÃO: Se o link exato do Julival que você usava for um pouco diferente, substitua na linha abaixo!
+            curl -LSs "https://raw.githubusercontent.com/julival/KernelSU/main/kernel/setup.sh" | bash -s
             echo "🔧 Injetando Makefile.ext no Makefile raiz..."
             sed -i '/^all:/i -include $(srctree)/KernelSU/kernel/Makefile.ext\n' Makefile
             echo "🔧 Removendo a dependência do KPROBES do Kconfig..."
@@ -71,7 +72,7 @@ jobs:
             sed -i 's/depends on KPROBES//g' KernelSU-Next/kernel/Kconfig
           fi
 
-          echo "📝 Criando arquivo de patch Non-Kprobes (À prova de falhas de espaço)..."
+          echo "📝 Criando arquivo de patch Non-Kprobes (Modo Externs)..."
           cat << 'EOF' > ksu-hooks.patch
           --- a/fs/exec.c
           +++ b/fs/exec.c
