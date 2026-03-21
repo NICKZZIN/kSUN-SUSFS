@@ -329,6 +329,7 @@ jobs:
           if [ "$KSU_TYPE" != "None" ]; then
             echo "🔧 Configurando KernelSU em modo Non-Kprobes no .config..."
             scripts/config --file out/.config \
+              --enable CONFIG_KSU \
               --enable CONFIG_MODULES \
               --enable CONFIG_MODULE_UNLOAD \
               --disable CONFIG_KPROBES \
@@ -348,8 +349,8 @@ jobs:
       - name: Verify kernel config
         run: |
           echo "=== Checking critical configs ==="
-          grep -E "CONFIG_COMPAT_VDSO|CONFIG_SHADOW_CALL_STACK|CONFIG_SHADOW_CALL_STACK_VMAP|CONFIG_LTO_CLANG|CONFIG_LTO_NONE|CONFIG_CFI_CLANG|CONFIG_RELR|CONFIG_THINLTO|CONFIG_KPROBES" out/.config || true
-
+          grep -E "CONFIG_COMPAT_VDSO|CONFIG_LTO_CLANG|CONFIG_KPROBES|CONFIG_KSU" out/.config || true
+          
       - name: Build kernel
         run: |
           export ARCH=arm64
