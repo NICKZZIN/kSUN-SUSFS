@@ -72,7 +72,7 @@ jobs:
 
           echo "🩹 Reparando formatação do patch (corrigindo espaços do GitHub)..."
           sed -i 's/\r//g' ksu-hooks.patch
-          sed -i -e '/^[^+ \-@]/ s/^/ /' -e 's/^$/ /' ksu-hooks.patch
+          sed -i -e '/^[^+ @-]/ s/^/ /' -e 's/^$/ /' ksu-hooks.patch
 
           echo "🚀 Aplicando Hooks Non-Kprobes no código do Kernel..."
           if [ -f "ksu-hooks.patch" ]; then
