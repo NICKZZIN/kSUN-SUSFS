@@ -10,8 +10,8 @@ on:
         required: true
         type: choice
         options:
-          - None
-          - KernelSU (Julival)
+          - Nonksu
+          - KernelSU
           - KernelSU-Next
         default: 'None'
 
@@ -57,7 +57,7 @@ jobs:
           if [ "$KSU_TYPE" == "KernelSU (Julival)" ]; then
             echo "✅ Baixando KernelSU (Julival)..."
             # ATENÇÃO: Se o link exato do Julival que você usava for um pouco diferente, substitua na linha abaixo!
-            curl -LSs "https://raw.githubusercontent.com/julival/KernelSU/main/kernel/setup.sh" | bash -s
+            curl -LSs "https://raw.githubusercontent.com/bittencourtjulival/KernelSU/master/kernel/setup.sh" | bash -s
             echo "🔧 Injetando Makefile.ext no Makefile raiz..."
             sed -i '/^all:/i -include $(srctree)/KernelSU/kernel/Makefile.ext\n' Makefile
             echo "🔧 Removendo a dependência do KPROBES do Kconfig..."
