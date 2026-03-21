@@ -16,7 +16,6 @@ on:
         default: 'None'
 
 env:
-  # Se rodar por push automático, o padrão será "None". Se rodar manual, usa a escolha do menu.
   KSU_TYPE: ${{ github.event.inputs.ksu_type || 'None' }}
 
 jobs:
@@ -58,9 +57,13 @@ jobs:
           if [ "$KSU_TYPE" == "KernelSU" ]; then
             echo "✅ Aplicando patch do KernelSU (Julival)..."
             curl -LSs "https://raw.githubusercontent.com/bittencourtjulival/KernelSU/master/kernel/setup.sh" | bash -s
+            echo "🔧 Injetando Makefile.ext no Makefile raiz..."
+            sed -i '/^all:/i -include $(srctree)/KernelSU/kernel/Makefile.ext\n' Makefile
           elif [ "$KSU_TYPE" == "KernelSU-Next" ]; then
             echo "✅ Aplicando patch do KernelSU-Next..."
             curl -LSs "https://raw.githubusercontent.com/KernelSU-Next/KernelSU-Next/next/kernel/setup.sh" | bash -s
+            echo "🔧 Injetando Makefile.ext no Makefile raiz..."
+            sed -i '/^all:/i -include $(srctree)/KernelSU-Next/kernel/Makefile.ext\n' Makefile
           fi
 
       - name: Download AOSP Clang r547379
@@ -115,7 +118,6 @@ jobs:
 
       - name: Configure kernel options
         run: |
-          # Opções padrão do Kernel
           scripts/config --file out/.config \
             --enable CONFIG_COMPAT_VDSO \
             --enable CONFIG_SHADOW_CALL_STACK \
@@ -126,9 +128,8 @@ jobs:
             --enable CONFIG_RELR \
             --enable CONFIG_THINLTO
 
-          # Injetar opções do KernelSU se o usuário selecionou algum
           if [ "$KSU_TYPE" != "None" ]; then
-            echo "🔧 Injetando configurações do $KSU_TYPE no .config..."
+            echo "🔧 Injetando configs do KSU no .config..."
             scripts/config --file out/.config \
               --enable CONFIG_KPROBES \
               --enable CONFIG_HAVE_KPROBES \
@@ -137,7 +138,6 @@ jobs:
               --enable CONFIG_MODULE_UNLOAD
           fi
 
-          # Resolve dependências e limpa o config
           make O=out \
             ARCH=arm64 \
             CC=clang \
@@ -197,25 +197,24 @@ jobs:
           echo "Copiar Image..."
           cp out/arch/arm64/boot/Image AnyKernel3/
           
-          echo "Copiar dtbo.img (se existir)..."
+          echo "Copiar dtbo.img..."
           if [ -f out/arch/arm64/boot/dtbo.img ]; then
             cp out/arch/arm64/boot/dtbo.img AnyKernel3/
           fi
           
-          echo "Unindo e copiando os arquivos .dtb..."
+          echo "Unindo arquivos .dtb..."
           if ls out/arch/arm64/boot/dts/vendor/qcom/*.dtb 1>/dev/null 2>&1; then
             cat out/arch/arm64/boot/dts/vendor/qcom/*.dtb > AnyKernel3/dtb
           elif ls out/arch/arm64/boot/dts/vendor/xiaomi/*.dtb 1>/dev/null 2>&1; then
             cat out/arch/arm64/boot/dts/vendor/xiaomi/*.dtb > AnyKernel3/dtb
           fi
           
-          echo "Compactando o ZIP instalável..."
-          cd AnyKernel3
-          zip -r9 "../C137-KERNEL V1.zip" * -x .git README.md *placeholder
+          echo "Limpando lixo do repositório..."
+          rm -rf AnyKernel3/.git AnyKernel3/README.md AnyKernel3/*placeholder
 
       - name: Upload kernel ZIP
         uses: actions/upload-artifact@v4
         with:
           name: C137-KERNEL-V1-${{ env.KSU_TYPE }}-${{ github.sha }}
-          path: "C137-KERNEL V1.zip"
+          path: AnyKernel3/*
           retention-days: 30
