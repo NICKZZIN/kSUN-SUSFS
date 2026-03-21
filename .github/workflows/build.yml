@@ -57,7 +57,7 @@ jobs:
           if [ "$KSU_TYPE" == "KernelSU" ]; then
             echo "✅ Baixando KernelSU..."
             # ATENÇÃO: Se o link exato do Julival que você usava for um pouco diferente, substitua na linha abaixo!
-            curl -LSs "https://raw.githubusercontent.com/bittencourtjulival/KernelSU/master/kernel/setup.sh" | bash -s
+            curl -LSs "https://raw.githubusercontent.com/NICKZZIN/Ksu-c137/master/kernel/setup.sh" | bash -s
             echo "🔧 Injetando Makefile.ext no Makefile raiz..."
             sed -i '/^all:/i -include $(srctree)/KernelSU/kernel/Makefile.ext\n' Makefile
             echo "🔧 Removendo a dependência do KPROBES do Kconfig..."
