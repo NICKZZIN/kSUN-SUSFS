@@ -41,27 +41,20 @@ jobs:
       - name: Inject KernelSU-Next & Force Flags
         run: |
           echo "=== 1. Limpeza de resquícios ==="
-          # Removemos injeções antigas para evitar duplicidade
           sed -i '/kernelsu/d' fs/Makefile fs/Kconfig drivers/Makefile drivers/Kconfig || true
           sed -i '/KernelSU/d' fs/Makefile fs/Kconfig drivers/Makefile drivers/Kconfig || true
           rm -rf drivers/kernelsu KernelSU-Next KernelSU drivers/KernelSU susfs_5.4.patch
           
           echo "=== 2. Instalando KernelSU-Next ==="
+          # O script já faz o download e já cria o link em drivers/kernelsu
           curl -fLSs "https://raw.githubusercontent.com/sidex15/KernelSU-Next/refs/heads/legacy-susfs-v2/kernel/setup.sh" | bash -s legacy-susfs-v2
 
-          echo "=== 3. Integrando KSU ao Kernel de forma absoluta ==="
-          # Movemos a pasta recém baixada para dentro dos drivers de forma definitiva
-          mv KernelSU-Next/kernel drivers/kernelsu
-          rm -rf KernelSU-Next
+          echo "=== 3. Declarando Flags no Kconfig ==="
+          # Encontramos o Kconfig que o setup.sh acabou de criar e injetamos as flags nele
+          KSU_KC=$(find . -maxdepth 3 -name "Kconfig" | grep -iE "kernelsu|KernelSU" | head -n 1)
+          echo "Injetando flags em: $KSU_KC"
           
-          # Obrigamos o kernel a ler a pasta do KSU e compilar o código
-          echo 'obj-$(CONFIG_KSU) += kernelsu/' >> drivers/Makefile
-          echo 'source "drivers/kernelsu/Kconfig"' >> drivers/Kconfig
-
-          echo "=== 4. Declarando Flags de Ocultação no Kconfig ==="
-          # Ao declarar aqui, impedimos o 'olddefconfig' de apagá-las do seu .config
-          KSU_KC="drivers/kernelsu/Kconfig"
-          cat <<EOF >> $KSU_KC
+          cat <<EOF >> "$KSU_KC"
 
           config KSU_NEXT
               bool "KernelSU-Next"
@@ -96,26 +89,26 @@ jobs:
               default y
           EOF
 
-          echo "=== 5. Aplicando Patch Base SUSFS 5.4 ==="
+          echo "=== 4. Aplicando Patch Base SUSFS 5.4 ==="
           curl -fLSs "https://raw.githubusercontent.com/JackA1ltman/NonGKI_Kernel_Build_2nd/refs/heads/mainline/Patches/Patch/susfs_patch_to_5.4.patch" -o susfs_5.4.patch
           patch -p1 < susfs_5.4.patch
 
-          echo "=== 6. Aplicando Hooks Inline SUSFS ==="
+          echo "=== 5. Aplicando Hooks Inline SUSFS ==="
           curl -fLSs "https://raw.githubusercontent.com/JackA1ltman/NonGKI_Kernel_Build_2nd/refs/heads/mainline/Patches/susfs_inline_hook_patches.sh" | bash
 
-          echo "=== 7. Garantindo Headers do KSU ==="
-          # O patch 5.4 já colocou susfs.h e susfs_def.h no lugar certo. 
-          # Só precisamos copiar o ksu_susfs.h que agora está em drivers/kernelsu/
-          cp -v drivers/kernelsu/ksu_susfs.h include/linux/ || true
+          echo "=== 6. Garantindo Headers do KSU ==="
+          # Buscamos apenas o ksu_susfs.h do KSU e jogamos no include
+          find . -name "ksu_susfs.h" -not -path "*/include/linux/*" -exec cp -v {} include/linux/ \; || true
 
-          echo "=== 8. Corrigindo strncpy ==="
-          find drivers/kernelsu -type f -name "*.c" -exec sed -i 's/strncpy_from_unsafe_user/strncpy_from_user_nofault/g' {} +
+          echo "=== 7. Corrigindo strncpy ==="
+          # Aplica o fix de compatibilidade no diretório recém baixado
+          find drivers/kernelsu KernelSU-Next -type f -name "*.c" -exec sed -i 's/strncpy_from_unsafe_user/strncpy_from_user_nofault/g' {} + || true
 
-          echo "=== 9. Finalizando Integração ==="
+          echo "=== 8. Finalizando Integração ==="
           git config --global user.email "bot@github.com"
           git config --global user.name "GitHub Actions"
           git add .
-          git commit -m "Integrate sidex15 KSU-Next and SUSFS 5.4 with absolute Kconfig"
+          git commit -m "Integrate sidex15 KSU-Next and SUSFS 5.4 without breaking symlinks"
           
       - name: Download AOSP Clang r547379
         if: steps.cache-clang.outputs.cache-hit != 'true'
