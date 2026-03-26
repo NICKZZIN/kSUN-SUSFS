@@ -38,20 +38,36 @@ jobs:
           sudo cp /tmp/libufdt/utils/src/mkdtboimg.py /usr/local/bin/mkdtimg
           sudo chmod +x /usr/local/bin/mkdtimg
       
-      - name: Inject KernelSU-Next & Force Flags
+      - name: Inject KernelSU-Next (sidex15 Hybrid) & Force Flags
         run: |
           echo "=== 1. Limpeza de resquícios ==="
           sed -i '/kernelsu/d' fs/Makefile fs/Kconfig drivers/Makefile drivers/Kconfig || true
           sed -i '/KernelSU/d' fs/Makefile fs/Kconfig drivers/Makefile drivers/Kconfig || true
           rm -rf drivers/kernelsu KernelSU-Next KernelSU drivers/KernelSU susfs_5.4.patch
           
-          echo "=== 2. Instalando KernelSU-Next ==="
-          curl -fLSs "https://raw.githubusercontent.com/sidex15/KernelSU-Next/refs/heads/legacy-susfs-v2/kernel/setup.sh" | bash -s legacy-susfs-v2
-
-          echo "=== 3. Declarando Flags no Kconfig ==="
-          KSU_KC=$(find . -maxdepth 3 -name "Kconfig" | grep -iE "kernelsu|KernelSU" | head -n 1)
-          echo "Injetando flags em: $KSU_KC"
+          echo "=== 2. Clonando sidex15 Stable ==="
+          # Clona diretamente a branch stable do sidex15
+          git clone -b stable https://github.com/sidex15/KernelSU-Next drivers/kernelsu
           
+          echo "=== 3. Sobrepondo com sidex15 Legacy-SUSFS-v2 ==="
+          cd drivers/kernelsu
+          # Adiciona o próprio repo como remoto para buscar a outra branch
+          git remote add origin_legacy https://github.com/sidex15/KernelSU-Next
+          git fetch origin_legacy legacy-susfs-v2
+          
+          # Força a substituição de TODOS os arquivos pelos da branch legacy
+          # O -- . garante que arquivos na raiz e subpastas sejam esmagados
+          git checkout origin_legacy/legacy-susfs-v2 -- .
+          cd ../..
+
+          echo "=== 4. Integrando ao Build System do Kernel ==="
+          # Garante as chamadas no Makefile/Kconfig dos drivers
+          grep -q "kernelsu" drivers/Makefile || printf "\nobj-\$(CONFIG_KSU) += kernelsu/\n" >> drivers/Makefile
+          grep -q "drivers/kernelsu/Kconfig" drivers/Kconfig || sed -i "/endmenu/i\source \"drivers/kernelsu/Kconfig\"" drivers/Kconfig
+
+          echo "=== 5. Declarando Flags no Kconfig ==="
+          # Injetando as flags de SUSFS no Kconfig que acabou de ser sobreposto
+          KSU_KC="drivers/kernelsu/Kconfig"
           cat <<EOF >> "$KSU_KC"
 
           config SUSFS
@@ -91,35 +107,40 @@ jobs:
               default y
           EOF
 
-          echo "=== 4. Aplicando Patch Base SUSFS 5.4 ==="
+          echo "=== 6. Aplicando Patch Base SUSFS 5.4 ==="
           curl -fLSs "https://raw.githubusercontent.com/JackA1ltman/NonGKI_Kernel_Build_2nd/refs/heads/mainline/Patches/Patch/susfs_patch_to_5.4.patch" -o susfs_5.4.patch
           patch -p1 < susfs_5.4.patch
 
-          echo "=== 5. Aplicando Hooks Inline SUSFS ==="
+          echo "=== 7. Aplicando Hooks Inline SUSFS ==="
           curl -fLSs "https://raw.githubusercontent.com/JackA1ltman/NonGKI_Kernel_Build_2nd/refs/heads/mainline/Patches/susfs_inline_hook_patches.sh" | bash
 
-          echo "=== 6. Garantindo Headers do KSU ==="
-          find . -name "ksu_susfs.h" -not -path "*/include/linux/*" -exec cp -v {} include/linux/ \; || true
+          echo "=== 8. Garantindo Headers do KSU ==="
+          # Copia o header necessário para o include global do kernel
+          cp -v drivers/kernelsu/kernel/ksu_susfs.h include/linux/ || true
 
-          echo "=== 7. Corrigindo strncpy ==="
-          find drivers/kernelsu KernelSU-Next -type f -name "*.c" -exec sed -i 's/strncpy_from_unsafe_user/strncpy_from_user_nofault/g' {} + || true
-
-          echo "=== 8. Corrigindo incompatibilidades do Kernel 5.4 ==="
-          # Fix 1: allowlist.c (TWA_RESUME e biblioteca de task)
-          sed -i '1i #include <linux/sched/task.h>' drivers/kernelsu/allowlist.c
-          sed -i 's/TWA_RESUME/true/g' drivers/kernelsu/allowlist.c
+          echo "=== 9. Corrigindo strncpy e Incompatibilidades 5.4 ==="
+          # Aplica os fixes de código diretamente na estrutura que foi mesclada
+          find drivers/kernelsu -type f -name "*.c" -exec sed -i 's/strncpy_from_unsafe_user/strncpy_from_user_nofault/g' {} + || true
           
-          # Fix 2: app_profile.c (Remover filter_count)
-          sed -i '/filter_count/d' drivers/kernelsu/app_profile.c
+          # Fix allowlist (sched e TWA)
+          if [ -f drivers/kernelsu/kernel/allowlist.c ]; then
+              sed -i '1i #include <linux/sched/task.h>' drivers/kernelsu/kernel/allowlist.c
+              sed -i 's/TWA_RESUME/true/g' drivers/kernelsu/kernel/allowlist.c
+          fi
+          
+          # Fix app_profile
+          if [ -f drivers/kernelsu/kernel/app_profile.c ]; then
+              sed -i '/filter_count/d' drivers/kernelsu/kernel/app_profile.c
+          fi
 
-          # Fix 3: sucompat.c (pgtable.h mudou de lugar no Kernel 5.4)
+          # Fix pgtable (asm vs linux)
           find drivers/kernelsu -type f -name "*.c" -exec sed -i 's/<linux\/pgtable.h>/<asm\/pgtable.h>/g' {} +
 
-          echo "=== 9. Finalizando Integração ==="
+          echo "=== 10. Commit das alterações ==="
           git config --global user.email "bot@github.com"
           git config --global user.name "GitHub Actions"
           git add .
-          git commit -m "Integrate sidex15 KSU-Next, SUSFS 5.4 and fix C errors (pgtable)"
+          git commit -m "Integrate sidex15 KSU-Next (Stable + Legacy Overwrite) & SUSFS 5.4 Fixes"
           
       - name: Download AOSP Clang r547379
         if: steps.cache-clang.outputs.cache-hit != 'true'
