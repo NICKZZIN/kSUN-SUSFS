@@ -66,9 +66,14 @@ jobs:
           grep -q "drivers/kernelsu/Kconfig" drivers/Kconfig || sed -i "/endmenu/i\source \"drivers/kernelsu/Kconfig\"" drivers/Kconfig
 
           echo "=== 5. Declarando Flags no Kconfig ==="
-          # Injetando as flags de SUSFS no Kconfig que acabou de ser sobreposto
           KSU_KC="drivers/kernelsu/Kconfig"
-          cat <<EOF >> "$KSU_KC"
+          
+          # Criamos um novo Kconfig ou garantimos que as definições básicas estejam lá
+          # Adicionamos a CONFIG_KSU no topo se ela não existir
+          cat <<EOF > "$KSU_KC"
+          config KSU
+              bool "KernelSU support"
+              default y
 
           config SUSFS
               bool "SUSFS Base"
