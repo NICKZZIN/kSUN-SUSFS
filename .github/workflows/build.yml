@@ -70,11 +70,10 @@ jobs:
           echo "=== Aplicando Hooks Inline SUSFS ==="
           curl -fLSs "https://raw.githubusercontent.com/JackA1ltman/NonGKI_Kernel_Build_2nd/refs/heads/mainline/Patches/susfs_inline_hook_patches.sh" | bash
 
-          # 6. Organizar Headers (Necessário para não dar 'file not found')
-          echo "=== Organizando Headers ==="
-          cp -v drivers/kernelsu/susfs_def.h include/linux/ || true
-          cp -v drivers/kernelsu/susfs.h include/linux/ || true
-          cp -v drivers/kernelsu/ksu_susfs.h include/linux/ || true
+          # 6. Organizar Headers (Sem erros falsos)
+          echo "=== Verificando e Organizando Headers ==="
+          find . -type f -name "ksu_susfs.h" -not -path "*/include/linux/*" -exec cp -v {} include/linux/ \;
+          ls -l include/linux/susfs.h include/linux/susfs_def.h include/linux/ksu_susfs.h || echo "⚠️ Algum header pode estar faltando!"
 
           # 7. Fix strncpy (Xiaomi/Redmi Moonstone)
           echo "=== Corrigindo strncpy ==="
