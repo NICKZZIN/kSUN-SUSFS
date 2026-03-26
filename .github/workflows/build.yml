@@ -104,17 +104,19 @@ jobs:
           echo "=== 7. Corrigindo strncpy ==="
           find drivers/kernelsu KernelSU-Next -type f -name "*.c" -exec sed -i 's/strncpy_from_unsafe_user/strncpy_from_user_nofault/g' {} + || true
 
-          echo "=== 8. Corrigindo allowlist (TWA e put_task_struct) ==="
-          # Adiciona a biblioteca faltando na primeira linha do arquivo
+          echo "=== 8. Corrigindo incompatibilidades do Kernel 5.4 ==="
+          # Fix 1: allowlist.c (Aquele que resolvemos na última tentativa, já passou!)
           sed -i '1i #include <linux/sched/task.h>' drivers/kernelsu/allowlist.c
-          # Remove o TWA_RESUME por completo e substitui pelo booleano 'true' compatível com kernel antigo
           sed -i 's/TWA_RESUME/true/g' drivers/kernelsu/allowlist.c
+          
+          # Fix 2: app_profile.c (Apaga a chamada para o filter_count inexistente)
+          sed -i '/filter_count/d' drivers/kernelsu/app_profile.c
 
           echo "=== 9. Finalizando Integração ==="
           git config --global user.email "bot@github.com"
           git config --global user.name "GitHub Actions"
           git add .
-          git commit -m "Integrate sidex15 KSU-Next and fix allowlist errors"
+          git commit -m "Integrate sidex15 KSU-Next, SUSFS 5.4 and fix C errors"
           
       - name: Download AOSP Clang r547379
         if: steps.cache-clang.outputs.cache-hit != 'true'
