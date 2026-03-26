@@ -105,18 +105,21 @@ jobs:
           find drivers/kernelsu KernelSU-Next -type f -name "*.c" -exec sed -i 's/strncpy_from_unsafe_user/strncpy_from_user_nofault/g' {} + || true
 
           echo "=== 8. Corrigindo incompatibilidades do Kernel 5.4 ==="
-          # Fix 1: allowlist.c (Aquele que resolvemos na última tentativa, já passou!)
+          # Fix 1: allowlist.c (TWA_RESUME e biblioteca de task)
           sed -i '1i #include <linux/sched/task.h>' drivers/kernelsu/allowlist.c
           sed -i 's/TWA_RESUME/true/g' drivers/kernelsu/allowlist.c
           
-          # Fix 2: app_profile.c (Apaga a chamada para o filter_count inexistente)
+          # Fix 2: app_profile.c (Remover filter_count)
           sed -i '/filter_count/d' drivers/kernelsu/app_profile.c
+
+          # Fix 3: sucompat.c (pgtable.h mudou de lugar no Kernel 5.4)
+          find drivers/kernelsu -type f -name "*.c" -exec sed -i 's/<linux\/pgtable.h>/<asm\/pgtable.h>/g' {} +
 
           echo "=== 9. Finalizando Integração ==="
           git config --global user.email "bot@github.com"
           git config --global user.name "GitHub Actions"
           git add .
-          git commit -m "Integrate sidex15 KSU-Next, SUSFS 5.4 and fix C errors"
+          git commit -m "Integrate sidex15 KSU-Next, SUSFS 5.4 and fix C errors (pgtable)"
           
       - name: Download AOSP Clang r547379
         if: steps.cache-clang.outputs.cache-hit != 'true'
