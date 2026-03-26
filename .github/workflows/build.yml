@@ -40,28 +40,32 @@ jobs:
       
       - name: Inject KernelSU-Next & Apply SUSFS Patches
         run: |
-          # 1. Limpeza de resquícios de builds anteriores
+          # 1. Limpeza
           sed -i '/KernelSU/d' fs/Kconfig fs/Makefile drivers/Kconfig drivers/Makefile Makefile || true
           rm -rf drivers/KernelSU
           
-          # 2. Instalar KernelSU-Next via script oficial (Branch Legacy SUSFS)
+          # 2. Instalar KernelSU-Next
           curl -LSs "https://raw.githubusercontent.com/KernelSU-Next/KernelSU-Next/refs/heads/legacy_susfs/kernel/setup.sh" | bash -s legacy_susfs
           
-          # 3. Aplicar Patches do SUSFS no código do Kernel
-          # Isso injeta os hooks necessários para o SUSFS funcionar no sistema de arquivos
+          # 3. Aplicar Patches do SUSFS
           curl -LSs https://raw.githubusercontent.com/JackA1ltman/NonGKI_Kernel_Build_2nd/refs/heads/mainline/Patches/susfs_inline_hook_patches.sh | bash
+
+          # --- FIX PARA O ERRO 'susfs_def.h not found' ---
+          # Copia os arquivos necessários do KSU-Next para o diretório de includes do Kernel
+          cp KernelSU-Next/kernel/susfs.h include/linux/
+          cp KernelSU-Next/kernel/susfs_def.h include/linux/
+          # ----------------------------------------------
           
-          # 4. Correção específica para Xiaomi/Redmi (strncpy)
-          # O KSU-Next costuma usar nomes modernos, mas garantimos a compatibilidade aqui
+          # 4. Correção strncpy
           if [ -f drivers/KernelSU/kernel_compat.c ]; then
             sed -i 's/strncpy_from_unsafe_user/strncpy_from_user_nofault/g' drivers/KernelSU/kernel_compat.c || true
           fi
 
-          # 5. Configurar Identidade do Git para evitar erros de 'dirty'
+          # 5. Commit das mudanças
           git config --global user.email "bot@github.com"
           git config --global user.name "GitHub Actions"
           git add .
-          git commit -m "Integrate KernelSU-Next and SUSFS patches" || true
+          git commit -m "Integrate KSU-Next, SUSFS patches and fix missing headers" || true
           
       - name: Download AOSP Clang r547379
         if: steps.cache-clang.outputs.cache-hit != 'true'
