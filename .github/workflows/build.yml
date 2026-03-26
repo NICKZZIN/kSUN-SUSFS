@@ -120,20 +120,23 @@ jobs:
           cp -v drivers/kernelsu/ksu_susfs.h include/linux/ || cp -v drivers/kernelsu/kernel/ksu_susfs.h include/linux/ || true
 
           echo "=== 8. Corrigindo strncpy e Incompatibilidades 5.4 ==="
-          # 1. Corrige o erro de declaração implícita da função susfs_add_try_umount (Renomeia para add_try_umount)
-          # O find garante que pegamos o arquivo não importa em qual subpasta ele esteja
-          find drivers/kernelsu -name "supercalls.c" -exec sed -i 's/susfs_add_try_umount/add_try_umount/g' {} +
-          echo "[-] Fix susfs_add_try_umount aplicado."
+          # 1. Fix para 'susfs_add_try_umount' -> 'add_try_umount'
+          # Varre drivers/kernelsu procurando por qualquer arquivo que use a função errada
+          grep -rl "susfs_add_try_umount" drivers/kernelsu | xargs sed -i 's/susfs_add_try_umount/add_try_umount/g' || true
+          
+          # 2. Fix para 'susfs_add_susfs_whitelist' (caso ocorra o mesmo erro nela)
+          grep -rl "susfs_add_susfs_whitelist" drivers/kernelsu | xargs sed -i 's/susfs_add_susfs_whitelist/add_susfs_whitelist/g' || true
+          echo "[-] Fix de funções SUSFS aplicado com sucesso."
 
-          # 2. Corrigindo strncpy para compatibilidade com Kernels antigos
+          # 3. Corrigindo strncpy para kernels antigos (evita erro de compilação no 5.4)
           find drivers/kernelsu -type f -name "*.c" -exec sed -i 's/strncpy_from_unsafe_user/strncpy_from_user_nofault/g' {} + || true
           
-          # 3. Fixes de código para allowlist e app_profile
+          # 4. Inclusão de headers e correções de tipos
           find drivers/kernelsu -name "allowlist.c" -exec sed -i '1i #include <linux/sched/task.h>' {} +
           find drivers/kernelsu -name "allowlist.c" -exec sed -i 's/TWA_RESUME/true/g' {} +
           find drivers/kernelsu -name "app_profile.c" -exec sed -i '/filter_count/d' {} +
           
-          # 4. Fix pgtable (asm vs linux)
+          # 5. Fix pgtable para arquitetura arm64 no Kernel 5.4
           find drivers/kernelsu -type f -name "*.c" -exec sed -i 's/<linux\/pgtable.h>/<asm\/pgtable.h>/g' {} +
 
           echo "=== 9. Commit das alterações ==="
