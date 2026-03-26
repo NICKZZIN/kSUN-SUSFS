@@ -38,118 +38,31 @@ jobs:
           sudo cp /tmp/libufdt/utils/src/mkdtboimg.py /usr/local/bin/mkdtimg
           sudo chmod +x /usr/local/bin/mkdtimg
       
-      - name: Inject KernelSU-Next (sidex15 Hybrid) & Force Flags
+      - name: Inject KernelSU & Remove Dirty
         run: |
-          echo "=== 1. Limpeza de resquícios ==="
-          sed -i '/kernelsu/d' fs/Makefile fs/Kconfig drivers/Makefile drivers/Kconfig || true
-          sed -i '/KernelSU/d' fs/Makefile fs/Kconfig drivers/Makefile drivers/Kconfig || true
-          rm -rf drivers/kernelsu KernelSU-Next KernelSU drivers/KernelSU susfs_5.4.patch
+          # 1. Limpeza total
+          sed -i '/KernelSU/d' fs/Kconfig fs/Makefile drivers/Kconfig drivers/Makefile Makefile || true
+          rm -rf KernelSU drivers/KernelSU /tmp/ksu
           
-          echo "=== 2. Instalando Base Stable via Script Oficial ==="
-          # Usa o script da branch stable como base de estrutura
-          curl -fLSs "https://raw.githubusercontent.com/sidex15/KernelSU-Next/refs/heads/stable/kernel/setup.sh" | bash -s stable
-
-          echo "=== 3. Sobrepondo com sidex15 Legacy-SUSFS-v2 ==="
-          # O script do sidex15 instala em drivers/kernelsu
-          cd drivers/kernelsu
-          git remote add origin_legacy https://github.com/sidex15/KernelSU-Next
-          git fetch origin_legacy legacy-susfs-v2
+          curl -LSs "https://raw.githubusercontent.com/WildKernels/Wild_KSU/wild/kernel/setup.sh" | bash -s wild-old
           
-          # Força a sobreposição total (Frankenstein)
-          git checkout origin_legacy/legacy-susfs-v2 -- .
-          cd ../..
-
-          echo "=== 4. Declarando Flags no Kconfig ==="
-          # O setup.sh já integrou o Kconfig no drivers/Kconfig, agora injetamos as flags
-          KSU_KC="drivers/kernelsu/Kconfig"
+          # 4. Correção do strncpy para Xiaomi
+          sed -i 's/strncpy_from_unsafe_user/strncpy_from_user_nofault/g' drivers/KernelSU/kernel_compat.c || true
           
-          # Garantimos que a CONFIG_KSU principal exista e adicionamos as de SUSFS
-          # Usamos 'seed' para garantir que não duplique se o arquivo já existir
-          cat <<EOF >> "$KSU_KC"
-
-          config KSU
-              bool "KernelSU support"
-              default y
-
-          config SUSFS
-              bool "SUSFS Base"
-              default y
-
-          config KSU_NEXT
-              bool "KernelSU-Next"
-              default y
-
-          config KSU_SUSFS
-              bool "KSU SUSFS"
-              default y
-
-          config SUSFS_HMAC_SIG
-              bool "SUSFS HMAC"
-              default y
-
-          config SUSFS_SPOOF_UNAME
-              bool "SUSFS SPOOF UNAME"
-              default y
-
-          config SUSFS_HIDE_KSU
-              bool "SUSFS HIDE KSU"
-              default y
-
-          config SUSFS_HIDE_SUSFS
-              bool "SUSFS HIDE SUSFS"
-              default y
-
-          config SUSFS_TRY_UMOUNT
-              bool "SUSFS TRY UMOUNT"
-              default y
-
-          config SUSFS_SPOOF_DEV_ST_INO_FOR_KSU
-              bool "SUSFS SPOOF DEV"
-              default y
-          EOF
-
-          echo "=== 5. Aplicando Patch Base SUSFS 5.4 ==="
-          curl -fLSs "https://raw.githubusercontent.com/JackA1ltman/NonGKI_Kernel_Build_2nd/refs/heads/mainline/Patches/Patch/susfs_patch_to_5.4.patch" -o susfs_5.4.patch
-          patch -p1 < susfs_5.4.patch
-
-          echo "=== 6. Aplicando Hooks Inline SUSFS ==="
-          curl -fLSs "https://raw.githubusercontent.com/JackA1ltman/NonGKI_Kernel_Build_2nd/refs/heads/mainline/Patches/susfs_inline_hook_patches.sh" | bash
-
-          echo "=== 7. Garantindo Headers do KSU ==="
-          # No sidex15 legacy, ksu_susfs.h costuma estar em drivers/kernelsu/
-          cp -v drivers/kernelsu/ksu_susfs.h include/linux/ || cp -v drivers/kernelsu/kernel/ksu_susfs.h include/linux/ || true
-
-          echo "=== 8. Corrigindo strncpy e Incompatibilidades 5.4 ==="
-          # 1. Fix para 'susfs_add_try_umount' -> 'add_try_umount'
-          # Varre drivers/kernelsu procurando por qualquer arquivo que use a função errada
-          grep -rl "susfs_add_try_umount" drivers/kernelsu | xargs sed -i 's/susfs_add_try_umount/add_try_umount/g' || true
+          # 5. A SOLUÇÃO DEFINITIVA DOS GANCHOS MANUAIS
+          # "Cega" o KernelSU para forçar o uso das suas modificações no código
+          find drivers/KernelSU -type f -exec sed -i 's/CONFIG_KPROBES/CONFIG_KSU_BOGUS/g' {} +
           
-          # 2. Fix para 'susfs_add_susfs_whitelist' (caso ocorra o mesmo erro nela)
-          grep -rl "susfs_add_susfs_whitelist" drivers/kernelsu | xargs sed -i 's/susfs_add_susfs_whitelist/add_susfs_whitelist/g' || true
-          echo "[-] Fix de funções SUSFS aplicado com sucesso."
-
-          # 3. Corrigindo strncpy para kernels antigos (evita erro de compilação no 5.4)
-          find drivers/kernelsu -type f -name "*.c" -exec sed -i 's/strncpy_from_unsafe_user/strncpy_from_user_nofault/g' {} + || true
-          
-          # 4. Inclusão de headers e correções de tipos
-          find drivers/kernelsu -name "allowlist.c" -exec sed -i '1i #include <linux/sched/task.h>' {} +
-          find drivers/kernelsu -name "allowlist.c" -exec sed -i 's/TWA_RESUME/true/g' {} +
-          find drivers/kernelsu -name "app_profile.c" -exec sed -i '/filter_count/d' {} +
-          
-          # 5. Fix pgtable para arquitetura arm64 no Kernel 5.4
-          find drivers/kernelsu -type f -name "*.c" -exec sed -i 's/<linux\/pgtable.h>/<asm\/pgtable.h>/g' {} +
-
-          echo "=== 9. Commit das alterações ==="
+          # 6. Remover o "-dirty"
           git config --global user.email "bot@github.com"
           git config --global user.name "GitHub Actions"
           git add .
-          git commit -m "Integrate sidex15 KSU-Next (Stable Base + Legacy Overwrite) & SUSFS 5.4 Fixes"
+          git commit -m "Injeção dinâmica do KernelSU concluída"
           
       - name: Download AOSP Clang r547379
         if: steps.cache-clang.outputs.cache-hit != 'true'
         run: |
           mkdir -p $HOME/clang
-          # URL CORRIGIDA ABAIXO (removido o "=")
           curl -LSs "https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/main/clang-r547379.tar.gz" -o /tmp/clang.tar.gz
           tar -xzf /tmp/clang.tar.gz -C $HOME/clang
           rm /tmp/clang.tar.gz
@@ -198,19 +111,9 @@ jobs:
 
       - name: Configure kernel options
         run: |
+          # Enable options without modifying defconfig
           scripts/config --file out/.config \
             --enable CONFIG_KSU \
-            --enable CONFIG_KSU_NEXT \
-            --enable CONFIG_KSU_SUSFS \
-            --enable CONFIG_SUSFS \
-            --enable CONFIG_SUSFS_HMAC_SIG \
-            --enable CONFIG_SUSFS_SPOOF_UNAME \
-            --enable CONFIG_SUSFS_HIDE_KSU \
-            --enable CONFIG_SUSFS_HIDE_SUSFS \
-            --enable CONFIG_SUSFS_TRY_UMOUNT \
-            --enable CONFIG_SUSFS_SPOOF_DEV_ST_INO_FOR_KSU
-
-          scripts/config --file out/.config \
             --enable CONFIG_COMPAT_VDSO \
             --enable CONFIG_SHADOW_CALL_STACK \
             --enable CONFIG_SHADOW_CALL_STACK_VMAP \
@@ -219,7 +122,8 @@ jobs:
             --disable CONFIG_CFI_CLANG \
             --enable CONFIG_RELR \
             --enable CONFIG_THINLTO
-            
+
+          # Resolve dependencies non-interactively
           make O=out \
             ARCH=arm64 \
             CC=clang \
@@ -231,64 +135,38 @@ jobs:
 
       - name: Verify kernel config
         run: |
-          echo "=== Verificando Configurações Críticas ==="
-          # Mostra o status atual das flags no log para depuração
-          grep -E "CONFIG_KSU|CONFIG_SUSFS|CONFIG_LTO|CONFIG_CFI|CONFIG_SHADOW_CALL_STACK" out/.config || true
-          
+          echo "=== Checking critical configs ==="
+          grep -E "CONFIG_COMPAT_VDSO|CONFIG_SHADOW_CALL_STACK|CONFIG_SHADOW_CALL_STACK_VMAP|CONFIG_LTO_CLANG|CONFIG_LTO_NONE|CONFIG_CFI_CLANG|CONFIG_RELR|CONFIG_THINLTO" out/.config
           echo ""
-          # Lista de flags que DEVEM estar como 'y'
           declare -A expected=(
             ["CONFIG_KSU"]=y
-            ["CONFIG_KSU_NEXT"]=y
-            ["CONFIG_KSU_SUSFS"]=y
-            ["CONFIG_SUSFS"]=y
-            ["CONFIG_SUSFS_HMAC_SIG"]=y
-            ["CONFIG_SUSFS_SPOOF_UNAME"]=y
-            ["CONFIG_SUSFS_HIDE_KSU"]=y
-            ["CONFIG_SUSFS_HIDE_SUSFS"]=y
-            ["CONFIG_SUSFS_TRY_UMOUNT"]=y
-            ["CONFIG_SUSFS_SPOOF_DEV_ST_INO_FOR_KSU"]=y
             ["CONFIG_COMPAT_VDSO"]=y
             ["CONFIG_SHADOW_CALL_STACK"]=y
+            ["CONFIG_SHADOW_CALL_STACK_VMAP"]=y
             ["CONFIG_LTO_CLANG"]=y
+            ["CONFIG_RELR"]=y
             ["CONFIG_THINLTO"]=y
           )
-
-          # Lista de flags que DEVEM estar desativadas
           declare -A disabled=(
             ["CONFIG_CFI_CLANG"]=1
             ["CONFIG_LTO_NONE"]=1
           )
-
-          errors=0
-
-          echo "--- Checando Flags Ativas ---"
           for cfg in "${!expected[@]}"; do
             if grep -q "${cfg}=y" out/.config; then
-              echo "✅ ${cfg} está ativado"
+              echo "✅ ${cfg} is enabled"
             else
-              echo "❌ ERRO: ${cfg} NÃO está ativado!"
-              errors=$((errors + 1))
+              echo "❌ ${cfg} is NOT enabled!"
+              exit 1
             fi
           done
-
-          echo "--- Checando Flags Desativadas ---"
           for cfg in "${!disabled[@]}"; do
             if grep -q "${cfg}=y" out/.config; then
-              echo "❌ ERRO: ${cfg} deveria estar desativado, mas está ATIVO!"
-              errors=$((errors + 1))
+              echo "❌ ${cfg} should be disabled but is enabled!"
+              exit 1
             else
-              echo "✅ ${cfg} está desativado"
+              echo "✅ ${cfg} is disabled"
             fi
           done
-
-          if [ $errors -gt 0 ]; then
-            echo ""
-            echo "❌ Total de erros encontrados: $errors"
-            echo "A build foi interrompida porque o kernel não foi configurado corretamente."
-            exit 1
-          fi
-          echo "✅ Todas as configurações validadas com sucesso!"
 
       - name: Build kernel
         run: |
