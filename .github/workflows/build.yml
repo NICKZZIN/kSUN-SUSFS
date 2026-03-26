@@ -56,6 +56,10 @@ jobs:
           
           cat <<EOF >> "$KSU_KC"
 
+          config SUSFS
+              bool "SUSFS Base"
+              default y
+
           config KSU_NEXT
               bool "KernelSU-Next"
               default y
