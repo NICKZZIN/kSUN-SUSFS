@@ -38,48 +38,53 @@ jobs:
           sudo cp /tmp/libufdt/utils/src/mkdtboimg.py /usr/local/bin/mkdtimg
           sudo chmod +x /usr/local/bin/mkdtimg
       
-      - name: Inject KernelSU-Next & Apply SUSFS Patches
+      - name: Inject KernelSU-Next (sidex15) & Apply SUSFS v2.0.0
         run: |
-          # 1. Limpeza total de tentativas anteriores
-          echo "=== Limpando resquícios ==="
+          echo "=== Limpando resquícios de tentativas anteriores ==="
           sed -i '/KernelSU/d' fs/Kconfig fs/Makefile drivers/Kconfig drivers/Makefile Makefile || true
-          rm -rf drivers/KernelSU KernelSU-Next KernelSU
+          rm -rf drivers/kernelsu KernelSU-Next KernelSU drivers/KernelSU
           
-          # 2. Instalar KernelSU-Next (Legacy SUSFS)
-          echo "=== Instalando KernelSU-Next (Legacy SUSFS) ==="
-          curl -LSs "https://raw.githubusercontent.com/KernelSU-Next/KernelSU-Next/refs/heads/legacy_susfs/kernel/setup.sh" | bash -s legacy_susfs
+          # 1. Instalar KernelSU-Next via fork sidex15 (branch legacy-susfs-v2)
+          echo "=== Instalando KernelSU-Next (sidex15 - legacy-susfs-v2) ==="
+          curl -LSs "https://raw.githubusercontent.com/sidex15/KernelSU-Next/refs/heads/legacy-susfs-v2/kernel/setup.sh" | bash -s legacy-susfs-v2
 
-          # 3. Aplicar o Patch Base do SUSFS 5.4 (Obrigatório)
-          echo "=== Aplicando Patch Base SUSFS 5.4 ==="
+          # 2. Aplicar o Patch Base do SUSFS 5.4 (v2.0.0)
+          echo "=== Aplicando Patch Base SUSFS v2.0.0 ==="
           curl -LSs https://raw.githubusercontent.com/JackA1ltman/NonGKI_Kernel_Build_2nd/refs/heads/mainline/Patches/Patch/susfs_patch_to_5.4.patch | patch -p1
 
-          # 4. Aplicar os Hooks Inline do SUSFS
+          # 3. Aplicar os Hooks Inline do SUSFS
           echo "=== Aplicando Hooks Inline SUSFS ==="
           curl -LSs https://raw.githubusercontent.com/JackA1ltman/NonGKI_Kernel_Build_2nd/refs/heads/mainline/Patches/susfs_inline_hook_patches.sh | bash
 
-          # 5. Organizar Cabeçalhos (Garantindo que não copie sobre si mesmo)
-          echo "=== Verificando Cabeçalhos (Headers) ==="
-          [ -f include/linux/susfs_def.h ] && echo "✅ susfs_def.h presente" || (find . -name "susfs_def.h" -exec cp {} include/linux/ \; && echo "fixed susfs_def.h")
-          [ -f include/linux/susfs.h ] && echo "✅ susfs.h presente" || (find . -name "susfs.h" -exec cp {} include/linux/ \; && echo "fixed susfs.h")
-          [ -f include/linux/ksu_susfs.h ] && echo "✅ ksu_susfs.h presente" || (find . -name "ksu_susfs.h" -exec cp {} include/linux/ \; && echo "fixed ksu_susfs.h")
-          
-          # 6. Corrigindo Compatibilidade strncpy (Xiaomi/Redmi)
-          # Buscamos em KernelSU-Next ou drivers/KernelSU, onde quer que o script tenha injetado
-          echo "=== Corrigindo Compatibilidade strncpy ==="
-          KSU_DIR=$(find . -maxdepth 3 -type d -name "*KernelSU*" | head -n 1)
-          if [ -d "$KSU_DIR" ]; then
-             echo "KSU encontrado em: $KSU_DIR"
-             find "$KSU_DIR" -type f -name "*.c" -exec sed -i 's/strncpy_from_unsafe_user/strncpy_from_user_nofault/g' {} +
+          # 4. Organizar Cabeçalhos (Garantia de que o compilador não falhe)
+          echo "=== Organizando Cabeçalhos (Headers) ==="
+          # Procuramos onde o setup.sh do sidex15 colocou os arquivos e copiamos para include/linux/
+          KSU_IN_TREE=$(find . -maxdepth 4 -name "susfs_def.h" -not -path "./include/*" | head -n 1)
+          if [ -n "$KSU_IN_TREE" ]; then
+            KSU_H_DIR=$(dirname "$KSU_IN_TREE")
+            cp -v "$KSU_H_DIR/susfs.h" include/linux/ || true
+            cp -v "$KSU_H_DIR/susfs_def.h" include/linux/ || true
+            cp -v "$KSU_H_DIR/ksu_susfs.h" include/linux/ || true
           else
-             echo "❌ Erro: Diretório do KernelSU não encontrado!"
-             exit 1
+            echo "❌ Erro: Arquivos .h do SUSFS não encontrados na árvore do KSU!"
+            exit 1
           fi
+          
+          # 5. Corrigindo Compatibilidade strncpy (Xiaomi/Redmi)
+          echo "=== Corrigindo Compatibilidade strncpy ==="
+          # O script do sidex15 geralmente usa 'drivers/kernelsu'
+          KSU_DIR=$(find . -maxdepth 3 -type d -name "*kernelsu*" -o -name "*KernelSU*")
+          for dir in $KSU_DIR; do
+            echo "Aplicando fix em: $dir"
+            find "$dir" -type f -name "*.c" -exec sed -i 's/strncpy_from_unsafe_user/strncpy_from_user_nofault/g' {} +
+          done
 
-          # 7. Finalizar com commit (sem o -dirty)
+          # 6. Finalizar com commit
+          echo "=== Finalizando Integração ==="
           git config --global user.email "bot@github.com"
           git config --global user.name "GitHub Actions"
           git add .
-          git commit -m "Integrate KSU-Next and SUSFS"
+          git commit -m "Integrate sidex15 KSU-Next and SUSFS v2.0.0"
           
       - name: Download AOSP Clang r547379
         if: steps.cache-clang.outputs.cache-hit != 'true'
@@ -142,14 +147,27 @@ jobs:
             --enable CONFIG_SUSFS_SPOOF_UNAME \
             --enable CONFIG_SUSFS_HIDE_KSU \
             --enable CONFIG_SUSFS_HIDE_SUSFS \
+            --enable CONFIG_SUSFS_TRY_UMOUNT \
+            --enable CONFIG_SUSFS_SPOOF_DEV_ST_INO_FOR_KSU
+
+          scripts/config --file out/.config \
             --enable CONFIG_COMPAT_VDSO \
             --enable CONFIG_SHADOW_CALL_STACK \
+            --enable CONFIG_SHADOW_CALL_STACK_VMAP \
             --enable CONFIG_LTO_CLANG \
             --disable CONFIG_LTO_NONE \
-            --disable CONFIG_CFI_CLANG
-
-          # Sincroniza o .config com as novas flags
-          make O=out ARCH=arm64 CC=clang LLVM=1 LLVM_IAS=1 CROSS_COMPILE=aarch64-linux-gnu- CROSS_COMPILE_ARM32=arm-linux-gnueabi- olddefconfig
+            --disable CONFIG_CFI_CLANG \
+            --enable CONFIG_RELR \
+            --enable CONFIG_THINLTO
+            
+          make O=out \
+            ARCH=arm64 \
+            CC=clang \
+            LLVM=1 \
+            LLVM_IAS=1 \
+            CROSS_COMPILE=aarch64-linux-gnu- \
+            CROSS_COMPILE_ARM32=arm-linux-gnueabi- \
+            olddefconfig
 
       - name: Verify kernel config
         run: |
@@ -158,6 +176,9 @@ jobs:
           echo ""
           declare -A expected=(
             ["CONFIG_KSU"]=y
+            ["CONFIG_KSU_NEXT"]=y
+            ["CONFIG_KSU_SUSFS"]=y
+            ["CONFIG_SUSFS"]=y
             ["CONFIG_COMPAT_VDSO"]=y
             ["CONFIG_SHADOW_CALL_STACK"]=y
             ["CONFIG_SHADOW_CALL_STACK_VMAP"]=y
