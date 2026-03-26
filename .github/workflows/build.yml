@@ -40,32 +40,39 @@ jobs:
       
       - name: Inject KernelSU-Next & Apply SUSFS Patches
         run: |
-          # 1. Limpeza
+          # 1. Limpeza rigorosa de tentativas anteriores
+          echo "=== Limpando resquícios ==="
           sed -i '/KernelSU/d' fs/Kconfig fs/Makefile drivers/Kconfig drivers/Makefile Makefile || true
-          rm -rf drivers/KernelSU
+          rm -rf drivers/KernelSU KernelSU-Next
           
-          # 2. Instalar KernelSU-Next
+          # 2. Instalar KernelSU-Next via script oficial (Branch Legacy SUSFS)
+          echo "=== Instalando KernelSU-Next (Legacy SUSFS) ==="
           curl -LSs "https://raw.githubusercontent.com/KernelSU-Next/KernelSU-Next/refs/heads/legacy_susfs/kernel/setup.sh" | bash -s legacy_susfs
           
-          # 3. Aplicar Patches do SUSFS
+          # 3. Aplicar Patches do SUSFS (Hooks do Kernel)
+          echo "=== Aplicando Patches SUSFS no Kernel ==="
           curl -LSs https://raw.githubusercontent.com/JackA1ltman/NonGKI_Kernel_Build_2nd/refs/heads/mainline/Patches/susfs_inline_hook_patches.sh | bash
 
-          # --- FIX PARA O ERRO 'susfs_def.h not found' ---
-          # Copia os arquivos necessários do KSU-Next para o diretório de includes do Kernel
-          cp KernelSU-Next/kernel/susfs.h include/linux/
-          cp KernelSU-Next/kernel/susfs_def.h include/linux/
-          # ----------------------------------------------
+          # 4. FIX DOS HEADERS (Onde o erro ocorria)
+          # Procuramos os arquivos .h do SUSFS em qualquer lugar e copiamos para o include/linux/
+          echo "=== Corrigindo cabeçalhos do SUSFS ==="
+          find . -name "susfs.h" -exec cp {} include/linux/ \;
+          find . -name "susfs_def.h" -exec cp {} include/linux/ \;
+          find . -name "ksu_susfs.h" -exec cp {} include/linux/ \;
           
-          # 4. Correção strncpy
-          if [ -f drivers/KernelSU/kernel_compat.c ]; then
-            sed -i 's/strncpy_from_unsafe_user/strncpy_from_user_nofault/g' drivers/KernelSU/kernel_compat.c || true
-          fi
-
-          # 5. Commit das mudanças
+          # Verificação visual no log para termos certeza que funcionou
+          ls -l include/linux/susfs* || echo "⚠️ AVISO: Arquivos SUSFS não foram encontrados!"
+          
+          # 5. Correção de compatibilidade (strncpy) para aparelhos Xiaomi/Redmi
+          echo "=== Aplicando correções de compatibilidade ==="
+          find drivers/KernelSU -type f -name "*.c" -exec sed -i 's/strncpy_from_unsafe_user/strncpy_from_user_nofault/g' {} + || true
+          
+          # 6. Finalizar integração
+          echo "=== Finalizando com commit ==="
           git config --global user.email "bot@github.com"
           git config --global user.name "GitHub Actions"
           git add .
-          git commit -m "Integrate KSU-Next, SUSFS patches and fix missing headers" || true
+          git commit -m "Integrate KSU-Next and SUSFS" || true
           
       - name: Download AOSP Clang r547379
         if: steps.cache-clang.outputs.cache-hit != 'true'
@@ -119,23 +126,22 @@ jobs:
 
       - name: Configure kernel options
         run: |
-          # Habilitar KSU e SUSFS no .config
           scripts/config --file out/.config \
             --enable CONFIG_KSU \
             --enable CONFIG_KSU_NEXT \
             --enable CONFIG_KSU_SUSFS \
             --enable CONFIG_SUSFS \
             --enable CONFIG_SUSFS_HMAC_SIG \
+            --enable CONFIG_SUSFS_SPOOF_UNAME \
+            --enable CONFIG_SUSFS_HIDE_KSU \
+            --enable CONFIG_SUSFS_HIDE_SUSFS \
             --enable CONFIG_COMPAT_VDSO \
             --enable CONFIG_SHADOW_CALL_STACK \
-            --enable CONFIG_SHADOW_CALL_STACK_VMAP \
             --enable CONFIG_LTO_CLANG \
             --disable CONFIG_LTO_NONE \
-            --disable CONFIG_CFI_CLANG \
-            --enable CONFIG_RELR \
-            --enable CONFIG_THINLTO
+            --disable CONFIG_CFI_CLANG
 
-          # Sincronizar dependências
+          # Sincroniza o .config com as novas flags
           make O=out ARCH=arm64 CC=clang LLVM=1 LLVM_IAS=1 CROSS_COMPILE=aarch64-linux-gnu- CROSS_COMPILE_ARM32=arm-linux-gnueabi- olddefconfig
 
       - name: Verify kernel config
