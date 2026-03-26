@@ -40,47 +40,40 @@ jobs:
       
       - name: Inject KernelSU-Next (sidex15) & Apply SUSFS v2.0.0
         run: |
-          echo "=== Limpando resquícios de tentativas anteriores ==="
+          echo "=== Limpando resquícios ==="
           sed -i '/KernelSU/d' fs/Kconfig fs/Makefile drivers/Kconfig drivers/Makefile Makefile || true
           rm -rf drivers/kernelsu KernelSU-Next KernelSU drivers/KernelSU
           
-          # 1. Instalar KernelSU-Next via fork sidex15 (branch legacy-susfs-v2)
-          echo "=== Instalando KernelSU-Next (sidex15 - legacy-susfs-v2) ==="
+          # 1. Instalar KernelSU-Next (sidex15)
+          echo "=== Instalando KernelSU-Next ==="
           curl -LSs "https://raw.githubusercontent.com/sidex15/KernelSU-Next/refs/heads/legacy-susfs-v2/kernel/setup.sh" | bash -s legacy-susfs-v2
 
-          # 2. Aplicar o Patch Base do SUSFS 5.4 (v2.0.0)
-          echo "=== Aplicando Patch Base SUSFS v2.0.0 ==="
+          # 2. Aplicar Patch Base SUSFS 5.4 (Exatamente o que você pediu)
+          echo "=== Aplicando Patch Base SUSFS 5.4 ==="
           curl -LSs https://raw.githubusercontent.com/JackA1ltman/NonGKI_Kernel_Build_2nd/refs/heads/mainline/Patches/Patch/susfs_patch_to_5.4.patch | patch -p1
 
-          # 3. Aplicar os Hooks Inline do SUSFS
+          # 3. Aplicar Hooks Inline SUSFS (Exatamente o que você pediu)
           echo "=== Aplicando Hooks Inline SUSFS ==="
           curl -LSs https://raw.githubusercontent.com/JackA1ltman/NonGKI_Kernel_Build_2nd/refs/heads/mainline/Patches/susfs_inline_hook_patches.sh | bash
 
-          # 4. Organizar Cabeçalhos (Garantia de que o compilador não falhe)
-          echo "=== Organizando Cabeçalhos (Headers) ==="
-          # Procuramos onde o setup.sh do sidex15 colocou os arquivos e copiamos para include/linux/
-          KSU_IN_TREE=$(find . -maxdepth 4 -name "susfs_def.h" -not -path "./include/*" | head -n 1)
-          if [ -n "$KSU_IN_TREE" ]; then
-            KSU_H_DIR=$(dirname "$KSU_IN_TREE")
-            cp -v "$KSU_H_DIR/susfs.h" include/linux/ || true
-            cp -v "$KSU_H_DIR/susfs_def.h" include/linux/ || true
-            cp -v "$KSU_H_DIR/ksu_susfs.h" include/linux/ || true
+          # 4. Verificação de Cabeçalhos (Sem 'find' problemático)
+          # O patch 5.4 geralmente já coloca os arquivos em include/linux/
+          echo "=== Verificando Headers ==="
+          ls include/linux/susfs_def.h || (echo "❌ Erro: susfs_def.h não encontrado!" && exit 1)
+          ls include/linux/susfs.h || (echo "❌ Erro: susfs.h não encontrado!" && exit 1)
+          
+          # 5. Corrigindo Compatibilidade strncpy
+          echo "=== Corrigindo strncpy ==="
+          # Busca a pasta onde o KSU foi instalado e aplica o fix
+          KSU_DIR=$(find . -maxdepth 3 -type d -name "*kernelsu*" -o -name "*KernelSU*" | head -n 1)
+          if [ -d "$KSU_DIR" ]; then
+            find "$KSU_DIR" -type f -name "*.c" -exec sed -i 's/strncpy_from_unsafe_user/strncpy_from_user_nofault/g' {} +
           else
-            echo "❌ Erro: Arquivos .h do SUSFS não encontrados na árvore do KSU!"
+            echo "❌ Erro: Pasta do KernelSU não encontrada para o fix strncpy!"
             exit 1
           fi
-          
-          # 5. Corrigindo Compatibilidade strncpy (Xiaomi/Redmi)
-          echo "=== Corrigindo Compatibilidade strncpy ==="
-          # O script do sidex15 geralmente usa 'drivers/kernelsu'
-          KSU_DIR=$(find . -maxdepth 3 -type d -name "*kernelsu*" -o -name "*KernelSU*")
-          for dir in $KSU_DIR; do
-            echo "Aplicando fix em: $dir"
-            find "$dir" -type f -name "*.c" -exec sed -i 's/strncpy_from_unsafe_user/strncpy_from_user_nofault/g' {} +
-          done
 
-          # 6. Finalizar com commit
-          echo "=== Finalizando Integração ==="
+          # 6. Finalizar
           git config --global user.email "bot@github.com"
           git config --global user.name "GitHub Actions"
           git add .
