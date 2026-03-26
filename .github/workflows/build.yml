@@ -2,7 +2,7 @@ name: Build Kernel
 
 on:
   push:
-    branches: [ lineage-23.2 ]
+    branches: [ lineage-23.2, lineage-23.2-ksu ]
   workflow_dispatch:
 
 jobs:
@@ -37,7 +37,32 @@ jobs:
           git clone https://android.googlesource.com/platform/system/libufdt /tmp/libufdt
           sudo cp /tmp/libufdt/utils/src/mkdtboimg.py /usr/local/bin/mkdtimg
           sudo chmod +x /usr/local/bin/mkdtimg
+      
+      - name: Inject KernelSU-Next & Apply SUSFS Patches
+        run: |
+          # 1. Limpeza de resquícios de builds anteriores
+          sed -i '/KernelSU/d' fs/Kconfig fs/Makefile drivers/Kconfig drivers/Makefile Makefile || true
+          rm -rf drivers/KernelSU
+          
+          # 2. Instalar KernelSU-Next via script oficial (Branch Legacy SUSFS)
+          curl -LSs "https://raw.githubusercontent.com/KernelSU-Next/KernelSU-Next/refs/heads/legacy_susfs/kernel/setup.sh" | bash -s legacy_susfs
+          
+          # 3. Aplicar Patches do SUSFS no código do Kernel
+          # Isso injeta os hooks necessários para o SUSFS funcionar no sistema de arquivos
+          curl -LSs https://raw.githubusercontent.com/JackA1ltman/NonGKI_Kernel_Build_2nd/refs/heads/mainline/Patches/susfs_inline_hook_patches.sh | bash
+          
+          # 4. Correção específica para Xiaomi/Redmi (strncpy)
+          # O KSU-Next costuma usar nomes modernos, mas garantimos a compatibilidade aqui
+          if [ -f drivers/KernelSU/kernel_compat.c ]; then
+            sed -i 's/strncpy_from_unsafe_user/strncpy_from_user_nofault/g' drivers/KernelSU/kernel_compat.c || true
+          fi
 
+          # 5. Configurar Identidade do Git para evitar erros de 'dirty'
+          git config --global user.email "bot@github.com"
+          git config --global user.name "GitHub Actions"
+          git add .
+          git commit -m "Integrate KernelSU-Next and SUSFS patches" || true
+          
       - name: Download AOSP Clang r547379
         if: steps.cache-clang.outputs.cache-hit != 'true'
         run: |
@@ -90,8 +115,13 @@ jobs:
 
       - name: Configure kernel options
         run: |
-          # Enable options without modifying defconfig
+          # Habilitar KSU e SUSFS no .config
           scripts/config --file out/.config \
+            --enable CONFIG_KSU \
+            --enable CONFIG_KSU_NEXT \
+            --enable CONFIG_KSU_SUSFS \
+            --enable CONFIG_SUSFS \
+            --enable CONFIG_SUSFS_HMAC_SIG \
             --enable CONFIG_COMPAT_VDSO \
             --enable CONFIG_SHADOW_CALL_STACK \
             --enable CONFIG_SHADOW_CALL_STACK_VMAP \
@@ -101,15 +131,8 @@ jobs:
             --enable CONFIG_RELR \
             --enable CONFIG_THINLTO
 
-          # Resolve dependencies non-interactively
-          make O=out \
-            ARCH=arm64 \
-            CC=clang \
-            LLVM=1 \
-            LLVM_IAS=1 \
-            CROSS_COMPILE=aarch64-linux-gnu- \
-            CROSS_COMPILE_ARM32=arm-linux-gnueabi- \
-            olddefconfig
+          # Sincronizar dependências
+          make O=out ARCH=arm64 CC=clang LLVM=1 LLVM_IAS=1 CROSS_COMPILE=aarch64-linux-gnu- CROSS_COMPILE_ARM32=arm-linux-gnueabi- olddefconfig
 
       - name: Verify kernel config
         run: |
@@ -117,6 +140,7 @@ jobs:
           grep -E "CONFIG_COMPAT_VDSO|CONFIG_SHADOW_CALL_STACK|CONFIG_SHADOW_CALL_STACK_VMAP|CONFIG_LTO_CLANG|CONFIG_LTO_NONE|CONFIG_CFI_CLANG|CONFIG_RELR|CONFIG_THINLTO" out/.config
           echo ""
           declare -A expected=(
+            ["CONFIG_KSU"]=y
             ["CONFIG_COMPAT_VDSO"]=y
             ["CONFIG_SHADOW_CALL_STACK"]=y
             ["CONFIG_SHADOW_CALL_STACK_VMAP"]=y
@@ -183,25 +207,32 @@ jobs:
           path: build.log
           retention-days: 7
           
-      - name: Gather build outputs
+      - name: Package with AnyKernel3
         run: |
-          mkdir -p output
-          cp out/arch/arm64/boot/Image output/
-          if ls out/arch/arm64/boot/dts/vendor/qcom/*.dtb 1>/dev/null 2>&1; then
-            cp out/arch/arm64/boot/dts/vendor/qcom/*.dtb output/
-          fi
-          if ls out/arch/arm64/boot/dts/vendor/xiaomi/*.dtb 1>/dev/null 2>&1; then
-            cp out/arch/arm64/boot/dts/vendor/xiaomi/*.dtb output/
-          fi
+          # 1. Baixar o seu AnyKernel3
+          git clone https://github.com/NICKZZIN/ANYKERNEL3-C137 AK3
+          
+          # 2. Copiar a Image principal
+          cp out/arch/arm64/boot/Image AK3/
+          
+          # 3. Copiar dtbo.img se o seu kernel tiver gerado
           if [ -f out/arch/arm64/boot/dtbo.img ]; then
-            cp out/arch/arm64/boot/dtbo.img output/
+            cp out/arch/arm64/boot/dtbo.img AK3/
           fi
-          echo "Build outputs:"
-          ls -lh output/
+          
+          # 4. Copiar os arquivos .dtb
+          if ls out/arch/arm64/boot/dts/vendor/qcom/*.dtb 1>/dev/null 2>&1; then
+            cp out/arch/arm64/boot/dts/vendor/qcom/*.dtb AK3/dtb/ || true
+          elif ls out/arch/arm64/boot/dts/vendor/xiaomi/*.dtb 1>/dev/null 2>&1; then
+            cp out/arch/arm64/boot/dts/vendor/xiaomi/*.dtb AK3/dtb/ || true
+          fi
+          
+          # 5. Limpar arquivos desnecessários (para o GitHub zipar apenas o que importa)
+          rm -rf AK3/.git AK3/README.md AK3/*placeholder
 
-      - name: Upload kernel artifacts
+      - name: Upload Flashable Zip
         uses: actions/upload-artifact@v4
         with:
-          name: kernel-moonstone-${{ github.sha }}
-          path: output/
+          name: Kernel-C137-KSU
+          path: AK3/
           retention-days: 30
