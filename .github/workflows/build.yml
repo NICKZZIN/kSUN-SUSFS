@@ -40,39 +40,37 @@ jobs:
       
       - name: Inject KernelSU-Next & Apply SUSFS Patches
         run: |
-          # 1. Limpeza rigorosa de tentativas anteriores
+          # 1. Limpeza total (sem silenciar erros críticos)
           echo "=== Limpando resquícios ==="
           sed -i '/KernelSU/d' fs/Kconfig fs/Makefile drivers/Kconfig drivers/Makefile Makefile || true
           rm -rf drivers/KernelSU KernelSU-Next
           
-          # 2. Instalar KernelSU-Next via script oficial (Branch Legacy SUSFS)
+          # 2. Instalar KernelSU-Next (Legacy SUSFS)
           echo "=== Instalando KernelSU-Next (Legacy SUSFS) ==="
           curl -LSs "https://raw.githubusercontent.com/KernelSU-Next/KernelSU-Next/refs/heads/legacy_susfs/kernel/setup.sh" | bash -s legacy_susfs
-          
-          # 3. Aplicar Patches do SUSFS (Hooks do Kernel)
-          echo "=== Aplicando Patches SUSFS no Kernel ==="
+
+          # 3. Aplicar o Patch Base do SUSFS 5.4 (Obrigatório antes dos hooks)
+          echo "=== Aplicando Patch Base SUSFS 5.4 ==="
+          curl -LSs https://raw.githubusercontent.com/JackA1ltman/NonGKI_Kernel_Build_2nd/refs/heads/mainline/Patches/Patch/susfs_patch_to_5.4.patch | patch -p1
+
+          # 4. Aplicar os Hooks Inline do SUSFS
+          echo "=== Aplicando Hooks Inline SUSFS ==="
           curl -LSs https://raw.githubusercontent.com/JackA1ltman/NonGKI_Kernel_Build_2nd/refs/heads/mainline/Patches/susfs_inline_hook_patches.sh | bash
 
-          # 4. FIX DOS HEADERS (Onde o erro ocorria)
-          # Procuramos os arquivos .h do SUSFS em qualquer lugar e copiamos para o include/linux/
-          echo "=== Corrigindo cabeçalhos do SUSFS ==="
+          # 5. Mover Headers para o lugar correto (Garantia de compilação)
+          # O patch 5.4 e o KSU-Next trazem esses arquivos, vamos garantir que o compilador os veja
+          echo "=== Organizando Cabeçalhos (Headers) ==="
           find . -name "susfs.h" -exec cp {} include/linux/ \;
           find . -name "susfs_def.h" -exec cp {} include/linux/ \;
           find . -name "ksu_susfs.h" -exec cp {} include/linux/ \;
           
-          # Verificação visual no log para termos certeza que funcionou
-          ls -l include/linux/susfs* || echo "⚠️ AVISO: Arquivos SUSFS não foram encontrados!"
+          # 6. Verificação Manual (Se falhar aqui, o workflow para agora)
+          ls include/linux/susfs_def.h
+          ls include/linux/susfs.h
           
-          # 5. Correção de compatibilidade (strncpy) para aparelhos Xiaomi/Redmi
-          echo "=== Aplicando correções de compatibilidade ==="
-          find drivers/KernelSU -type f -name "*.c" -exec sed -i 's/strncpy_from_unsafe_user/strncpy_from_user_nofault/g' {} + || true
-          
-          # 6. Finalizar integração
-          echo "=== Finalizando com commit ==="
-          git config --global user.email "bot@github.com"
-          git config --global user.name "GitHub Actions"
-          git add .
-          git commit -m "Integrate KSU-Next and SUSFS" || true
+          # 7. Correção strncpy para Kernel 5.4 (Xiaomi/Redmi)
+          echo "=== Corrigindo Compatibilidade strncpy ==="
+          find drivers/KernelSU -type f -name "*.c" -exec sed -i 's/strncpy_from_unsafe_user/strncpy_from_user_nofault/g' {} +
           
       - name: Download AOSP Clang r547379
         if: steps.cache-clang.outputs.cache-hit != 'true'
