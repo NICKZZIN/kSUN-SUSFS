@@ -40,16 +40,16 @@ jobs:
       
       - name: Inject KernelSU-Next & Apply SUSFS Patches
         run: |
-          # 1. Limpeza total (sem silenciar erros críticos)
+          # 1. Limpeza total de tentativas anteriores
           echo "=== Limpando resquícios ==="
           sed -i '/KernelSU/d' fs/Kconfig fs/Makefile drivers/Kconfig drivers/Makefile Makefile || true
-          rm -rf drivers/KernelSU KernelSU-Next
+          rm -rf drivers/KernelSU KernelSU-Next KernelSU
           
           # 2. Instalar KernelSU-Next (Legacy SUSFS)
           echo "=== Instalando KernelSU-Next (Legacy SUSFS) ==="
           curl -LSs "https://raw.githubusercontent.com/KernelSU-Next/KernelSU-Next/refs/heads/legacy_susfs/kernel/setup.sh" | bash -s legacy_susfs
 
-          # 3. Aplicar o Patch Base do SUSFS 5.4 (Obrigatório antes dos hooks)
+          # 3. Aplicar o Patch Base do SUSFS 5.4 (Obrigatório)
           echo "=== Aplicando Patch Base SUSFS 5.4 ==="
           curl -LSs https://raw.githubusercontent.com/JackA1ltman/NonGKI_Kernel_Build_2nd/refs/heads/mainline/Patches/Patch/susfs_patch_to_5.4.patch | patch -p1
 
@@ -57,20 +57,29 @@ jobs:
           echo "=== Aplicando Hooks Inline SUSFS ==="
           curl -LSs https://raw.githubusercontent.com/JackA1ltman/NonGKI_Kernel_Build_2nd/refs/heads/mainline/Patches/susfs_inline_hook_patches.sh | bash
 
-          # 5. Mover Headers para o lugar correto (Garantia de compilação)
-          # O patch 5.4 e o KSU-Next trazem esses arquivos, vamos garantir que o compilador os veja
-          echo "=== Organizando Cabeçalhos (Headers) ==="
-          find . -name "susfs.h" -exec cp {} include/linux/ \;
-          find . -name "susfs_def.h" -exec cp {} include/linux/ \;
-          find . -name "ksu_susfs.h" -exec cp {} include/linux/ \;
+          # 5. Organizar Cabeçalhos (Garantindo que não copie sobre si mesmo)
+          echo "=== Verificando Cabeçalhos (Headers) ==="
+          [ -f include/linux/susfs_def.h ] && echo "✅ susfs_def.h presente" || (find . -name "susfs_def.h" -exec cp {} include/linux/ \; && echo "fixed susfs_def.h")
+          [ -f include/linux/susfs.h ] && echo "✅ susfs.h presente" || (find . -name "susfs.h" -exec cp {} include/linux/ \; && echo "fixed susfs.h")
+          [ -f include/linux/ksu_susfs.h ] && echo "✅ ksu_susfs.h presente" || (find . -name "ksu_susfs.h" -exec cp {} include/linux/ \; && echo "fixed ksu_susfs.h")
           
-          # 6. Verificação Manual (Se falhar aqui, o workflow para agora)
-          ls include/linux/susfs_def.h
-          ls include/linux/susfs.h
-          
-          # 7. Correção strncpy para Kernel 5.4 (Xiaomi/Redmi)
+          # 6. Corrigindo Compatibilidade strncpy (Xiaomi/Redmi)
+          # Buscamos em KernelSU-Next ou drivers/KernelSU, onde quer que o script tenha injetado
           echo "=== Corrigindo Compatibilidade strncpy ==="
-          find drivers/KernelSU -type f -name "*.c" -exec sed -i 's/strncpy_from_unsafe_user/strncpy_from_user_nofault/g' {} +
+          KSU_DIR=$(find . -maxdepth 3 -type d -name "*KernelSU*" | head -n 1)
+          if [ -d "$KSU_DIR" ]; then
+             echo "KSU encontrado em: $KSU_DIR"
+             find "$KSU_DIR" -type f -name "*.c" -exec sed -i 's/strncpy_from_unsafe_user/strncpy_from_user_nofault/g' {} +
+          else
+             echo "❌ Erro: Diretório do KernelSU não encontrado!"
+             exit 1
+          fi
+
+          # 7. Finalizar com commit (sem o -dirty)
+          git config --global user.email "bot@github.com"
+          git config --global user.name "GitHub Actions"
+          git add .
+          git commit -m "Integrate KSU-Next and SUSFS"
           
       - name: Download AOSP Clang r547379
         if: steps.cache-clang.outputs.cache-hit != 'true'
