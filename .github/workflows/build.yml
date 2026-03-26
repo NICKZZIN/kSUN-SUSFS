@@ -120,16 +120,20 @@ jobs:
           cp -v drivers/kernelsu/ksu_susfs.h include/linux/ || cp -v drivers/kernelsu/kernel/ksu_susfs.h include/linux/ || true
 
           echo "=== 8. Corrigindo strncpy e Incompatibilidades 5.4 ==="
-          # Corrige o erro de declaração implícita da função susfs_add_try_umount
+          # 1. Corrige o erro de declaração implícita da função susfs_add_try_umount (Renomeia para add_try_umount)
+          # O find garante que pegamos o arquivo não importa em qual subpasta ele esteja
           find drivers/kernelsu -name "supercalls.c" -exec sed -i 's/susfs_add_try_umount/add_try_umount/g' {} +
-          
-          # Mantém os outros fixes que já estavam lá...
+          echo "[-] Fix susfs_add_try_umount aplicado."
+
+          # 2. Corrigindo strncpy para compatibilidade com Kernels antigos
           find drivers/kernelsu -type f -name "*.c" -exec sed -i 's/strncpy_from_unsafe_user/strncpy_from_user_nofault/g' {} + || true
           
-          # Fixes de código (buscando em drivers/kernelsu/ e drivers/kernelsu/kernel/)
+          # 3. Fixes de código para allowlist e app_profile
           find drivers/kernelsu -name "allowlist.c" -exec sed -i '1i #include <linux/sched/task.h>' {} +
           find drivers/kernelsu -name "allowlist.c" -exec sed -i 's/TWA_RESUME/true/g' {} +
           find drivers/kernelsu -name "app_profile.c" -exec sed -i '/filter_count/d' {} +
+          
+          # 4. Fix pgtable (asm vs linux)
           find drivers/kernelsu -type f -name "*.c" -exec sed -i 's/<linux\/pgtable.h>/<asm\/pgtable.h>/g' {} +
 
           echo "=== 9. Commit das alterações ==="
