@@ -46,11 +46,9 @@ jobs:
           rm -rf drivers/kernelsu KernelSU-Next KernelSU drivers/KernelSU susfs_5.4.patch
           
           echo "=== 2. Instalando KernelSU-Next ==="
-          # O script já faz o download e já cria o link em drivers/kernelsu
           curl -fLSs "https://raw.githubusercontent.com/sidex15/KernelSU-Next/refs/heads/legacy-susfs-v2/kernel/setup.sh" | bash -s legacy-susfs-v2
 
           echo "=== 3. Declarando Flags no Kconfig ==="
-          # Encontramos o Kconfig que o setup.sh acabou de criar e injetamos as flags nele
           KSU_KC=$(find . -maxdepth 3 -name "Kconfig" | grep -iE "kernelsu|KernelSU" | head -n 1)
           echo "Injetando flags em: $KSU_KC"
           
@@ -101,18 +99,22 @@ jobs:
           curl -fLSs "https://raw.githubusercontent.com/JackA1ltman/NonGKI_Kernel_Build_2nd/refs/heads/mainline/Patches/susfs_inline_hook_patches.sh" | bash
 
           echo "=== 6. Garantindo Headers do KSU ==="
-          # Buscamos apenas o ksu_susfs.h do KSU e jogamos no include
           find . -name "ksu_susfs.h" -not -path "*/include/linux/*" -exec cp -v {} include/linux/ \; || true
 
           echo "=== 7. Corrigindo strncpy ==="
-          # Aplica o fix de compatibilidade no diretório recém baixado
           find drivers/kernelsu KernelSU-Next -type f -name "*.c" -exec sed -i 's/strncpy_from_unsafe_user/strncpy_from_user_nofault/g' {} + || true
 
-          echo "=== 8. Finalizando Integração ==="
+          echo "=== 8. Corrigindo allowlist (TWA e put_task_struct) ==="
+          # Adiciona a biblioteca faltando na primeira linha do arquivo
+          sed -i '1i #include <linux/sched/task.h>' drivers/kernelsu/allowlist.c
+          # Remove o TWA_RESUME por completo e substitui pelo booleano 'true' compatível com kernel antigo
+          sed -i 's/TWA_RESUME/true/g' drivers/kernelsu/allowlist.c
+
+          echo "=== 9. Finalizando Integração ==="
           git config --global user.email "bot@github.com"
           git config --global user.name "GitHub Actions"
           git add .
-          git commit -m "Integrate sidex15 KSU-Next and SUSFS 5.4 without breaking symlinks"
+          git commit -m "Integrate sidex15 KSU-Next and fix allowlist errors"
           
       - name: Download AOSP Clang r547379
         if: steps.cache-clang.outputs.cache-hit != 'true'
