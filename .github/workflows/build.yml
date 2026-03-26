@@ -146,7 +146,8 @@ jobs:
         if: steps.cache-clang.outputs.cache-hit != 'true'
         run: |
           mkdir -p $HOME/clang
-          curl -LSs "https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/main/clang-r5=47379.tar.gz" -o /tmp/clang.tar.gz
+          # URL CORRIGIDA ABAIXO (removido o "=")
+          curl -LSs "https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/main/clang-r547379.tar.gz" -o /tmp/clang.tar.gz
           tar -xzf /tmp/clang.tar.gz -C $HOME/clang
           rm /tmp/clang.tar.gz
 
