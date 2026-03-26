@@ -38,7 +38,6 @@ jobs:
           sudo cp /tmp/libufdt/utils/src/mkdtboimg.py /usr/local/bin/mkdtimg
           sudo chmod +x /usr/local/bin/mkdtimg
       
-      - name: Inject KernelSU-Next (sidex15) & Force Kconfig Flags
       - name: Inject KernelSU-Next & Force Flags
         run: |
           echo "=== 1. Limpeza de resquícios ==="
