@@ -120,6 +120,10 @@ jobs:
           cp -v drivers/kernelsu/ksu_susfs.h include/linux/ || cp -v drivers/kernelsu/kernel/ksu_susfs.h include/linux/ || true
 
           echo "=== 8. Corrigindo strncpy e Incompatibilidades 5.4 ==="
+          # Corrige o erro de declaração implícita da função susfs_add_try_umount
+          find drivers/kernelsu -name "supercalls.c" -exec sed -i 's/susfs_add_try_umount/add_try_umount/g' {} +
+          
+          # Mantém os outros fixes que já estavam lá...
           find drivers/kernelsu -type f -name "*.c" -exec sed -i 's/strncpy_from_unsafe_user/strncpy_from_user_nofault/g' {} + || true
           
           # Fixes de código (buscando em drivers/kernelsu/ e drivers/kernelsu/kernel/)
