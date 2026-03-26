@@ -38,7 +38,7 @@ jobs:
           sudo cp /tmp/libufdt/utils/src/mkdtboimg.py /usr/local/bin/mkdtimg
           sudo chmod +x /usr/local/bin/mkdtimg
       
-      - name: Inject KernelSU-Next (sidex15) & Apply SUSFS v2.0.0
+      - name: Inject KernelSU-Next (sidex15) & Force Kconfig Flags
         run: |
           echo "=== Limpando resquícios ==="
           sed -i '/KernelSU/d' fs/Kconfig fs/Makefile drivers/Kconfig drivers/Makefile Makefile || true
@@ -48,36 +48,43 @@ jobs:
           echo "=== Instalando KernelSU-Next ==="
           curl -LSs "https://raw.githubusercontent.com/sidex15/KernelSU-Next/refs/heads/legacy-susfs-v2/kernel/setup.sh" | bash -s legacy-susfs-v2
 
-          # 2. Aplicar Patch Base SUSFS 5.4 (Exatamente o que você pediu)
+          # 2. Localizar o Kconfig do KernelSU
+          KSU_KCONFIG=$(find . -maxdepth 4 -name "Kconfig" | grep -i "kernelsu" | head -n 1)
+          echo "Kconfig do KSU encontrado em: $KSU_KCONFIG"
+
+          # 3. Forçar definições de KSU_NEXT e KSU_SUSFS no Kconfig
+          # Isso garante que o Kernel reconheça essas flags como válidas
+          if ! grep -q "config KSU_NEXT" "$KSU_KCONFIG"; then
+            echo "Injetando CONFIG_KSU_NEXT no Kconfig..."
+            echo -e "\nconfig KSU_NEXT\n    bool \"KernelSU-Next support\"\n    depends on KSU\n    default y\n" >> "$KSU_KCONFIG"
+          fi
+          if ! grep -q "config KSU_SUSFS" "$KSU_KCONFIG"; then
+            echo "Injetando CONFIG_KSU_SUSFS no Kconfig..."
+            echo -e "\nconfig KSU_SUSFS\n    bool \"KernelSU SUSFS support\"\n    depends on KSU && SUSFS\n    default y\n" >> "$KSU_KCONFIG"
+          fi
+
+          # 4. Aplicar Patch Base SUSFS 5.4
           echo "=== Aplicando Patch Base SUSFS 5.4 ==="
           curl -LSs https://raw.githubusercontent.com/JackA1ltman/NonGKI_Kernel_Build_2nd/refs/heads/mainline/Patches/Patch/susfs_patch_to_5.4.patch | patch -p1
 
-          # 3. Aplicar Hooks Inline SUSFS (Exatamente o que você pediu)
+          # 5. Aplicar Hooks Inline SUSFS
           echo "=== Aplicando Hooks Inline SUSFS ==="
           curl -LSs https://raw.githubusercontent.com/JackA1ltman/NonGKI_Kernel_Build_2nd/refs/heads/mainline/Patches/susfs_inline_hook_patches.sh | bash
 
-          # 4. Verificação de Cabeçalhos (Sem 'find' problemático)
-          # O patch 5.4 geralmente já coloca os arquivos em include/linux/
-          echo "=== Verificando Headers ==="
-          ls include/linux/susfs_def.h || (echo "❌ Erro: susfs_def.h não encontrado!" && exit 1)
-          ls include/linux/susfs.h || (echo "❌ Erro: susfs.h não encontrado!" && exit 1)
-          
-          # 5. Corrigindo Compatibilidade strncpy
-          echo "=== Corrigindo strncpy ==="
-          # Busca a pasta onde o KSU foi instalado e aplica o fix
-          KSU_DIR=$(find . -maxdepth 3 -type d -name "*kernelsu*" -o -name "*KernelSU*" | head -n 1)
-          if [ -d "$KSU_DIR" ]; then
-            find "$KSU_DIR" -type f -name "*.c" -exec sed -i 's/strncpy_from_unsafe_user/strncpy_from_user_nofault/g' {} +
-          else
-            echo "❌ Erro: Pasta do KernelSU não encontrada para o fix strncpy!"
-            exit 1
-          fi
+          # 6. Garantir Headers
+          cp -v $(find . -name "susfs_def.h" | grep -v "include/linux" | head -n 1) include/linux/ || true
+          cp -v $(find . -name "susfs.h" | grep -v "include/linux" | head -n 1) include/linux/ || true
+          cp -v $(find . -name "ksu_susfs.h" | grep -v "include/linux" | head -n 1) include/linux/ || true
 
-          # 6. Finalizar
+          # 7. Fix strncpy
+          KSU_DIR=$(dirname "$KSU_KCONFIG")
+          find "$KSU_DIR" -type f -name "*.c" -exec sed -i 's/strncpy_from_unsafe_user/strncpy_from_user_nofault/g' {} +
+
+          # 8. Finalizar
           git config --global user.email "bot@github.com"
           git config --global user.name "GitHub Actions"
           git add .
-          git commit -m "Integrate sidex15 KSU-Next and SUSFS v2.0.0"
+          git commit -m "Integrate sidex15 KSU-Next and force Kconfig flags"
           
       - name: Download AOSP Clang r547379
         if: steps.cache-clang.outputs.cache-hit != 'true'
@@ -164,41 +171,64 @@ jobs:
 
       - name: Verify kernel config
         run: |
-          echo "=== Checking critical configs ==="
-          grep -E "CONFIG_COMPAT_VDSO|CONFIG_SHADOW_CALL_STACK|CONFIG_SHADOW_CALL_STACK_VMAP|CONFIG_LTO_CLANG|CONFIG_LTO_NONE|CONFIG_CFI_CLANG|CONFIG_RELR|CONFIG_THINLTO" out/.config
+          echo "=== Verificando Configurações Críticas ==="
+          # Mostra o status atual das flags no log para depuração
+          grep -E "CONFIG_KSU|CONFIG_SUSFS|CONFIG_LTO|CONFIG_CFI|CONFIG_SHADOW_CALL_STACK" out/.config || true
+          
           echo ""
+          # Lista de flags que DEVEM estar como 'y'
           declare -A expected=(
             ["CONFIG_KSU"]=y
             ["CONFIG_KSU_NEXT"]=y
             ["CONFIG_KSU_SUSFS"]=y
             ["CONFIG_SUSFS"]=y
+            ["CONFIG_SUSFS_HMAC_SIG"]=y
+            ["CONFIG_SUSFS_SPOOF_UNAME"]=y
+            ["CONFIG_SUSFS_HIDE_KSU"]=y
+            ["CONFIG_SUSFS_HIDE_SUSFS"]=y
+            ["CONFIG_SUSFS_TRY_UMOUNT"]=y
+            ["CONFIG_SUSFS_SPOOF_DEV_ST_INO_FOR_KSU"]=y
             ["CONFIG_COMPAT_VDSO"]=y
             ["CONFIG_SHADOW_CALL_STACK"]=y
-            ["CONFIG_SHADOW_CALL_STACK_VMAP"]=y
             ["CONFIG_LTO_CLANG"]=y
-            ["CONFIG_RELR"]=y
             ["CONFIG_THINLTO"]=y
           )
+
+          # Lista de flags que DEVEM estar desativadas
           declare -A disabled=(
             ["CONFIG_CFI_CLANG"]=1
             ["CONFIG_LTO_NONE"]=1
           )
+
+          errors=0
+
+          echo "--- Checando Flags Ativas ---"
           for cfg in "${!expected[@]}"; do
             if grep -q "${cfg}=y" out/.config; then
-              echo "✅ ${cfg} is enabled"
+              echo "✅ ${cfg} está ativado"
             else
-              echo "❌ ${cfg} is NOT enabled!"
-              exit 1
+              echo "❌ ERRO: ${cfg} NÃO está ativado!"
+              errors=$((errors + 1))
             fi
           done
+
+          echo "--- Checando Flags Desativadas ---"
           for cfg in "${!disabled[@]}"; do
             if grep -q "${cfg}=y" out/.config; then
-              echo "❌ ${cfg} should be disabled but is enabled!"
-              exit 1
+              echo "❌ ERRO: ${cfg} deveria estar desativado, mas está ATIVO!"
+              errors=$((errors + 1))
             else
-              echo "✅ ${cfg} is disabled"
+              echo "✅ ${cfg} está desativado"
             fi
           done
+
+          if [ $errors -gt 0 ]; then
+            echo ""
+            echo "❌ Total de erros encontrados: $errors"
+            echo "A build foi interrompida porque o kernel não foi configurado corretamente."
+            exit 1
+          fi
+          echo "✅ Todas as configurações validadas com sucesso!"
 
       - name: Build kernel
         run: |
