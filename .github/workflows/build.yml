@@ -54,7 +54,16 @@ jobs:
           curl -LSs "https://raw.githubusercontent.com/JackA1ltman/NonGKI_Kernel_Build_2nd/refs/heads/mainline/Patches/susfs_inline_hook_patches.sh" | bash
 
           # 4. Fixes de compatibilidade do Wild_KSU (strncpy)
-          
+          echo "=== Corrigindo compatibilidade Xiaomi 5.4 ==="
+          KSU_DIR="drivers/kernelsu"
+          if [ -d "$KSU_DIR" ]; then
+              # O ESPAÇO entre {} e + é obrigatório
+              find "$KSU_DIR" -type f -name "*.c" -exec sed -i 's/strncpy_from_unsafe_user/strncpy_from_user_nofault/g' {} +
+              find "$KSU_DIR" -type f -exec sed -i 's/CONFIG_KPROBES/CONFIG_KSU_BOGUS/g' {} +
+              
+              # Adiciona o header necessário para o strncpy_from_user_nofault no ksu.c
+              sed -i '1i #include <linux/uaccess.h>' "$KSU_DIR/ksu.c"
+          fi
 
           # 5. Finalizar e salvar alterações
           git config --global user.email "bot@github.com"
