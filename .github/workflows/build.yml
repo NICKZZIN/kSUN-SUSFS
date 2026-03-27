@@ -42,35 +42,40 @@ jobs:
         run: |
           # 1. Limpeza total de tentativas anteriores
           echo "=== Limpando rastros antigos ==="
-          sed -i '/KernelSU/d' fs/Kconfig fs/Makefile drivers/Kconfig drivers/Makefile Makefile || true
-          rm -rf KernelSU drivers/KernelSU /tmp/ksu
+          # Removemos referências tanto minúsculas quanto maiúsculas
+          sed -i '/[Kk]ernel[Ss][Uu]/d' fs/Kconfig fs/Makefile drivers/Kconfig drivers/Makefile Makefile || true
+          rm -rf KernelSU drivers/kernelsu drivers/KernelSU Wild_KSU
           
-          # 2. Instalação via Wild_KSU (branch wild-old)
+          # 2. Instalação via Wild_KSU
           echo "=== Instalando Wild_KSU ==="
+          # O script cria o link em drivers/kernelsu
           curl -LSs "https://raw.githubusercontent.com/WildKernels/Wild_KSU/wild/kernel/setup.sh" | bash -s wild-old
           
-          # 3. Correção do strncpy (Xiaomi/Kernel 5.4)
-          # Procuramos o kernel_compat.c dinamicamente para não dar erro de "No such file"
-          echo "=== Aplicando fixes de código ==="
-          find . -name "kernel_compat.c" -exec sed -i 's/strncpy_from_unsafe_user/strncpy_from_user_nofault/g' {} + || true
+          # 3. Localização dinâmica e correção de código
+          # Usamos -L para seguir o link simbólico que o setup.sh criou
+          KSU_DIR=$(find -L drivers -maxdepth 2 -type d -iname "*kernelsu*" | head -n 1)
           
-          # 4. Forçar Ganchos Manuais (Bypass Kprobes)
-          # Isso garante que o KSU use os seus hooks manuais no kernel
-          KSU_DIR=$(find . -maxdepth 3 -type d -name "KernelSU" | head -n 1)
           if [ -d "$KSU_DIR" ]; then
-              echo "KSU encontrado em: $KSU_DIR"
+              echo "✅ KSU encontrado em: $KSU_DIR"
+              
+              # Correção do strncpy (Xiaomi/Kernel 5.4)
+              echo "=== Aplicando fixes de compatibilidade ==="
+              find "$KSU_DIR" -type f -name "*.c" -exec sed -i 's/strncpy_from_unsafe_user/strncpy_from_user_nofault/g' {} +
+              
+              # Forçar Ganchos Manuais (Bypass Kprobes)
+              echo "=== Aplicando bypass de Kprobes ==="
               find "$KSU_DIR" -type f -exec sed -i 's/CONFIG_KPROBES/CONFIG_KSU_BOGUS/g' {} +
           else
-              echo "❌ ERRO: Pasta KernelSU não encontrada após o setup!"
+              echo "❌ ERRO: Pasta kernelsu não encontrada em drivers/!"
+              ls -R drivers/ | grep -i ksu
               exit 1
           fi
           
-          # 5. Finalizar e limpar status "dirty"
+          # 4. Finalizar
           echo "=== Commitando alterações ==="
           git config --global user.email "bot@github.com"
           git config --global user.name "GitHub Actions"
           git add .
-          # O --allow-empty evita erro se o setup.sh já tiver feito o commit
           git commit -m "Integrate Wild_KSU and apply 5.4 compat fixes" || true
           
       - name: Download AOSP Clang r547379
