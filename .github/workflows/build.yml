@@ -40,24 +40,38 @@ jobs:
       
       - name: Inject KernelSU & Remove Dirty
         run: |
-          # 1. Limpeza total
+          # 1. Limpeza total de tentativas anteriores
+          echo "=== Limpando rastros antigos ==="
           sed -i '/KernelSU/d' fs/Kconfig fs/Makefile drivers/Kconfig drivers/Makefile Makefile || true
           rm -rf KernelSU drivers/KernelSU /tmp/ksu
           
+          # 2. Instalação via Wild_KSU (branch wild-old)
+          echo "=== Instalando Wild_KSU ==="
           curl -LSs "https://raw.githubusercontent.com/WildKernels/Wild_KSU/wild/kernel/setup.sh" | bash -s wild-old
           
-          # 4. Correção do strncpy para Xiaomi
-          sed -i 's/strncpy_from_unsafe_user/strncpy_from_user_nofault/g' drivers/KernelSU/kernel_compat.c || true
+          # 3. Correção do strncpy (Xiaomi/Kernel 5.4)
+          # Procuramos o kernel_compat.c dinamicamente para não dar erro de "No such file"
+          echo "=== Aplicando fixes de código ==="
+          find . -name "kernel_compat.c" -exec sed -i 's/strncpy_from_unsafe_user/strncpy_from_user_nofault/g' {} + || true
           
-          # 5. A SOLUÇÃO DEFINITIVA DOS GANCHOS MANUAIS
-          # "Cega" o KernelSU para forçar o uso das suas modificações no código
-          find drivers/KernelSU -type f -exec sed -i 's/CONFIG_KPROBES/CONFIG_KSU_BOGUS/g' {} +
+          # 4. Forçar Ganchos Manuais (Bypass Kprobes)
+          # Isso garante que o KSU use os seus hooks manuais no kernel
+          KSU_DIR=$(find . -maxdepth 3 -type d -name "KernelSU" | head -n 1)
+          if [ -d "$KSU_DIR" ]; then
+              echo "KSU encontrado em: $KSU_DIR"
+              find "$KSU_DIR" -type f -exec sed -i 's/CONFIG_KPROBES/CONFIG_KSU_BOGUS/g' {} +
+          else
+              echo "❌ ERRO: Pasta KernelSU não encontrada após o setup!"
+              exit 1
+          fi
           
-          # 6. Remover o "-dirty"
+          # 5. Finalizar e limpar status "dirty"
+          echo "=== Commitando alterações ==="
           git config --global user.email "bot@github.com"
           git config --global user.name "GitHub Actions"
           git add .
-          git commit -m "Injeção dinâmica do KernelSU concluída"
+          # O --allow-empty evita erro se o setup.sh já tiver feito o commit
+          git commit -m "Integrate Wild_KSU and apply 5.4 compat fixes" || true
           
       - name: Download AOSP Clang r547379
         if: steps.cache-clang.outputs.cache-hit != 'true'
