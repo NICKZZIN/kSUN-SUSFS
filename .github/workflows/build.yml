@@ -44,38 +44,28 @@ jobs:
           echo "=== Instalando Wild_KSU ==="
           curl -LSs "https://raw.githubusercontent.com/cyberc3dr/Wild_KSU/refs/heads/stable/kernel/setup.sh" | bash -s stable
           
-          # 2. Download dos arquivos core do SUSFS (Essenciais para não dar erro de 'file not found')
-          echo "=== Baixando arquivos core do SUSFS ==="
-          # Baixando o header e o driver do SUSFS para as pastas corretas
-          curl -LSs "https://gitlab.com/simonpunk/susfs4ksu/-/raw/main/kernel_patches/include/linux/susfs.h" -o include/linux/susfs.h
-          curl -LSs "https://gitlab.com/simonpunk/susfs4ksu/-/raw/main/kernel_patches/fs/susfs.c" -o fs/susfs.c
-          
-          # 3. Aplicar o Patch do SUSFS para Kernel 5.4
-          echo "=== Aplicando patch SUSFS 5.4 ==="
+          # 2. Aplicar o primeiro Patch (O que já cria os arquivos .h e o código do SUSFS)
+          echo "=== Aplicando Patch SUSFS 5.4 ==="
           curl -LSs "https://raw.githubusercontent.com/JackA1ltman/NonGKI_Kernel_Build_2nd/mainline/Patches/Patch/susfs_patch_to_5.4.patch" -o susfs.patch
-          patch -p1 < susfs.patch || echo "⚠️ Aviso: Alguns hunks do patch falharam, verifique se já foram aplicados."
+          patch -p1 < susfs.patch
 
-          # 4. Executar o script de Inline Hooks (Bypass de segurança)
-          echo "=== Aplicando Inline Hooks do SUSFS ==="
+          # 3. Aplicar o segundo Patch (Inline Hooks via Script)
+          echo "=== Aplicando Inline Hooks Patches ==="
           curl -LSs "https://raw.githubusercontent.com/JackA1ltman/NonGKI_Kernel_Build_2nd/refs/heads/mainline/Patches/susfs_inline_hook_patches.sh" | bash
 
-          # 5. Fixes de compatibilidade do Wild_KSU (strncpy)
+          # 4. Fixes de compatibilidade do Wild_KSU (strncpy)
+          echo "=== Corrigindo compatibilidade Xiaomi 5.4 ==="
           KSU_DIR="drivers/kernelsu"
           if [ -d "$KSU_DIR" ]; then
-              echo "✅ Aplicando correções no KSU em: $KSU_DIR"
-              find "$KSU_DIR" -type f -name "*.c" -exec sed -i 's/strncpy_from_unsafe_user/strncpy_from_user_nofault/g' {} +
-              # Forçar uso de ganchos manuais se necessário
-              find "$KSU_DIR" -type f -exec sed -i 's/CONFIG_KPROBES/CONFIG_KSU_BOGUS/g' {} +
+              find "$KSU_DIR" -type f -name "*.c" -exec sed -i 's/strncpy_from_unsafe_user/strncpy_from_user_nofault/g' {}+
+              find "$KSU_DIR" -type f -exec sed -i 's/CONFIG_KPROBES/CONFIG_KSU_BOGUS/g' {}+
           fi
 
-          # 6. Integrar SUSFS ao sistema de arquivos (fs/Makefile)
-          echo "obj-y += susfs.o" >> fs/Makefile
-
-          # 7. Finalizar e limpar status
+          # 5. Finalizar e salvar alterações
           git config --global user.email "bot@github.com"
           git config --global user.name "GitHub Actions"
           git add .
-          git commit -m "Integrate Wild_KSU + SUSFS 5.4" || true
+          git commit -m "Integrate Wild_KSU + SUSFS via provided patches" || true
           
       - name: Download AOSP Clang r547379
         if: steps.cache-clang.outputs.cache-hit != 'true'
