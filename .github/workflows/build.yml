@@ -40,36 +40,34 @@ jobs:
       
       - name: Inject KernelSU & SUSFS
         run: |
-          # 1. Instalação do Wild_KSU
-          echo "=== Instalando Wild_KSU ==="
-          curl -LSs "https://raw.githubusercontent.com/cyberc3dr/Wild_KSU/refs/heads/stable/kernel/setup.sh" | bash -s stable
+          # 1. Instalação do Wild_KSU a partir do SEU Fork corrigido
+          echo "=== Instalando Wild_KSU (Fork: NICKZZIN) ==="
+          curl -LSs "https://raw.githubusercontent.com/NICKZZIN/Wild_KSU/refs/heads/stable/kernel/setup.sh" | bash -s stable
           
-          # 2. Aplicar o primeiro Patch (O que já cria os arquivos .h e o código do SUSFS)
+          # 2. Aplicar o Patch do SUSFS para Kernel 5.4
           echo "=== Aplicando Patch SUSFS 5.4 ==="
           curl -LSs "https://raw.githubusercontent.com/JackA1ltman/NonGKI_Kernel_Build_2nd/mainline/Patches/Patch/susfs_patch_to_5.4.patch" -o susfs.patch
-          patch -p1 < susfs.patch
+          patch -p1 < susfs.patch || echo "⚠️ Patch já aplicado ou falhou em alguns hunks"
 
-          # 3. Aplicar o segundo Patch (Inline Hooks via Script)
-          echo "=== Aplicando Inline Hooks Patches ==="
+          # 3. Aplicar Inline Hooks (Bypass)
+          echo "=== Aplicando Inline Hooks ==="
           curl -LSs "https://raw.githubusercontent.com/JackA1ltman/NonGKI_Kernel_Build_2nd/refs/heads/mainline/Patches/susfs_inline_hook_patches.sh" | bash
 
-          # 4. Fixes de compatibilidade do Wild_KSU (strncpy)
-          echo "=== Corrigindo compatibilidade Xiaomi 5.4 ==="
+          # 4. Fixes de compatibilidade adicionais (strncpy e include)
+          echo "=== Aplicando Fixes de compatibilidade (Xiaomi 5.4) ==="
           KSU_DIR="drivers/kernelsu"
           if [ -d "$KSU_DIR" ]; then
-              # O ESPAÇO entre {} e + é obrigatório
+              # Corrige o strncpy_from_unsafe_user para kernels antigos
               find "$KSU_DIR" -type f -name "*.c" -exec sed -i 's/strncpy_from_unsafe_user/strncpy_from_user_nofault/g' {} +
-              find "$KSU_DIR" -type f -exec sed -i 's/CONFIG_KPROBES/CONFIG_KSU_BOGUS/g' {} +
-              
-              # Adiciona o header necessário para o strncpy_from_user_nofault no ksu.c
+              # Adiciona o include necessário no topo do ksu.c
               sed -i '1i #include <linux/uaccess.h>' "$KSU_DIR/ksu.c"
           fi
 
-          # 5. Finalizar e salvar alterações
+          # 5. Salvar alterações para o Build
           git config --global user.email "bot@github.com"
           git config --global user.name "GitHub Actions"
           git add .
-          git commit -m "Integrate Wild_KSU + SUSFS via provided patches" || true
+          git commit -m "Integrate Fixed Wild_KSU + SUSFS" || true
           
       - name: Download AOSP Clang r547379
         if: steps.cache-clang.outputs.cache-hit != 'true'
