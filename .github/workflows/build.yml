@@ -2,7 +2,7 @@ name: Build Kernel
 
 on:
   push:
-    branches: [ lineage-23.2, lineage-23.2-ksu ]
+    branches: [ lineage-23.2 ]
   workflow_dispatch:
 
 jobs:
@@ -49,7 +49,7 @@ jobs:
           # 2. Instalação via Wild_KSU
           echo "=== Instalando Wild_KSU ==="
           # O script cria o link em drivers/kernelsu
-          curl -LSs "https://raw.githubusercontent.com/WildKernels/Wild_KSU/wild/kernel/setup.sh" | bash -s wild-old
+          curl -LSs "https://raw.githubusercontent.com/cyberc3dr/Wild_KSU/kernel/setup.sh" | bash -s stable
           
           # 3. Localização dinâmica e correção de código
           # Usamos -L para seguir o link simbólico que o setup.sh criou
