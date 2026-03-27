@@ -48,8 +48,7 @@ jobs:
           
           # 2. Instalação via Wild_KSU
           echo "=== Instalando Wild_KSU ==="
-          # O script cria o link em drivers/kernelsu
-          curl -LSs "https://raw.githubusercontent.com/cyberc3dr/Wild_KSU/kernel/setup.sh" | bash -s stable
+          curl -LSs "https://raw.githubusercontent.com/cyberc3dr/Wild_KSU/refs/heads/stable/kernel/setup.sh" | bash -s stable
           
           # 3. Localização dinâmica e correção de código
           # Usamos -L para seguir o link simbólico que o setup.sh criou
