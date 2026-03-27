@@ -38,44 +38,44 @@ jobs:
           sudo cp /tmp/libufdt/utils/src/mkdtboimg.py /usr/local/bin/mkdtimg
           sudo chmod +x /usr/local/bin/mkdtimg
       
-      - name: Inject KernelSU & Remove Dirty
+      - name: Inject KernelSU & SUSFS
         run: |
-          # 1. Limpeza total de tentativas anteriores
-          echo "=== Limpando rastros antigos ==="
-          # Removemos referências tanto minúsculas quanto maiúsculas
-          sed -i '/[Kk]ernel[Ss][Uu]/d' fs/Kconfig fs/Makefile drivers/Kconfig drivers/Makefile Makefile || true
-          rm -rf KernelSU drivers/kernelsu drivers/KernelSU Wild_KSU
-          
-          # 2. Instalação via Wild_KSU
+          # 1. Instalação do Wild_KSU
           echo "=== Instalando Wild_KSU ==="
           curl -LSs "https://raw.githubusercontent.com/cyberc3dr/Wild_KSU/refs/heads/stable/kernel/setup.sh" | bash -s stable
           
-          # 3. Localização dinâmica e correção de código
-          # Usamos -L para seguir o link simbólico que o setup.sh criou
-          KSU_DIR=$(find -L drivers -maxdepth 2 -type d -iname "*kernelsu*" | head -n 1)
+          # 2. Download dos arquivos core do SUSFS (Essenciais para não dar erro de 'file not found')
+          echo "=== Baixando arquivos core do SUSFS ==="
+          # Baixando o header e o driver do SUSFS para as pastas corretas
+          curl -LSs "https://gitlab.com/simonpunk/susfs4ksu/-/raw/main/kernel_patches/include/linux/susfs.h" -o include/linux/susfs.h
+          curl -LSs "https://gitlab.com/simonpunk/susfs4ksu/-/raw/main/kernel_patches/fs/susfs.c" -o fs/susfs.c
           
+          # 3. Aplicar o Patch do SUSFS para Kernel 5.4
+          echo "=== Aplicando patch SUSFS 5.4 ==="
+          curl -LSs "https://raw.githubusercontent.com/JackA1ltman/NonGKI_Kernel_Build_2nd/mainline/Patches/Patch/susfs_patch_to_5.4.patch" -o susfs.patch
+          patch -p1 < susfs.patch || echo "⚠️ Aviso: Alguns hunks do patch falharam, verifique se já foram aplicados."
+
+          # 4. Executar o script de Inline Hooks (Bypass de segurança)
+          echo "=== Aplicando Inline Hooks do SUSFS ==="
+          curl -LSs "https://raw.githubusercontent.com/JackA1ltman/NonGKI_Kernel_Build_2nd/refs/heads/mainline/Patches/susfs_inline_hook_patches.sh" | bash
+
+          # 5. Fixes de compatibilidade do Wild_KSU (strncpy)
+          KSU_DIR="drivers/kernelsu"
           if [ -d "$KSU_DIR" ]; then
-              echo "✅ KSU encontrado em: $KSU_DIR"
-              
-              # Correção do strncpy (Xiaomi/Kernel 5.4)
-              echo "=== Aplicando fixes de compatibilidade ==="
+              echo "✅ Aplicando correções no KSU em: $KSU_DIR"
               find "$KSU_DIR" -type f -name "*.c" -exec sed -i 's/strncpy_from_unsafe_user/strncpy_from_user_nofault/g' {} +
-              
-              # Forçar Ganchos Manuais (Bypass Kprobes)
-              echo "=== Aplicando bypass de Kprobes ==="
+              # Forçar uso de ganchos manuais se necessário
               find "$KSU_DIR" -type f -exec sed -i 's/CONFIG_KPROBES/CONFIG_KSU_BOGUS/g' {} +
-          else
-              echo "❌ ERRO: Pasta kernelsu não encontrada em drivers/!"
-              ls -R drivers/ | grep -i ksu
-              exit 1
           fi
-          
-          # 4. Finalizar
-          echo "=== Commitando alterações ==="
+
+          # 6. Integrar SUSFS ao sistema de arquivos (fs/Makefile)
+          echo "obj-y += susfs.o" >> fs/Makefile
+
+          # 7. Finalizar e limpar status
           git config --global user.email "bot@github.com"
           git config --global user.name "GitHub Actions"
           git add .
-          git commit -m "Integrate Wild_KSU and apply 5.4 compat fixes" || true
+          git commit -m "Integrate Wild_KSU + SUSFS 5.4" || true
           
       - name: Download AOSP Clang r547379
         if: steps.cache-clang.outputs.cache-hit != 'true'
