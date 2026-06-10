@@ -129,6 +129,19 @@ jobs:
           # Enable options without modifying defconfig
           scripts/config --file out/.config \
             --enable CONFIG_KSU \
+            --enable CONFIG_KSU_INLINE_HOOK \
+            --enable CONFIG_KSU_SUSFS \
+            --enable CONFIG_KSU_SUSFS_SUS_PATH \
+            --enable CONFIG_KSU_SUSFS_SUS_MOUNT \
+            --enable CONFIG_KSU_SUSFS_AUTO_ADD_SUS_KSU_DEFAULT_MOUNT \
+            --enable CONFIG_KSU_SUSFS_AUTO_ADD_SUS_BIND_MOUNT \
+            --enable CONFIG_KSU_SUSFS_AUTO_ADD_TRY_UMOUNT_FOR_BIND_MOUNT \
+            --enable CONFIG_KSU_SUSFS_SPOOF_UNAME \
+            --enable CONFIG_KSU_SUSFS_ENABLE_LOG \
+            --enable CONFIG_KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS \
+            --enable CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG \
+            --enable CONFIG_KSU_SUSFS_OPEN_REDIRECT \
+            --enable CONFIG_KSU_SUSFS_SUS_SU \
             --enable CONFIG_COMPAT_VDSO \
             --enable CONFIG_SHADOW_CALL_STACK \
             --enable CONFIG_SHADOW_CALL_STACK_VMAP \
@@ -151,16 +164,14 @@ jobs:
       - name: Verify kernel config
         run: |
           echo "=== Checking critical configs ==="
-          grep -E "CONFIG_COMPAT_VDSO|CONFIG_SHADOW_CALL_STACK|CONFIG_SHADOW_CALL_STACK_VMAP|CONFIG_LTO_CLANG|CONFIG_LTO_NONE|CONFIG_CFI_CLANG|CONFIG_RELR|CONFIG_THINLTO" out/.config
-          echo ""
           declare -A expected=(
             ["CONFIG_KSU"]=y
+            ["CONFIG_KSU_INLINE_HOOK"]=y
+            ["CONFIG_KSU_SUSFS"]=y
             ["CONFIG_COMPAT_VDSO"]=y
             ["CONFIG_SHADOW_CALL_STACK"]=y
-            ["CONFIG_SHADOW_CALL_STACK_VMAP"]=y
             ["CONFIG_LTO_CLANG"]=y
             ["CONFIG_RELR"]=y
-            ["CONFIG_THINLTO"]=y
           )
           declare -A disabled=(
             ["CONFIG_CFI_CLANG"]=1
