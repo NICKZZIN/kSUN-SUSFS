@@ -82,6 +82,7 @@ jobs:
           key: ccache-${{ github.sha }}
           restore-keys: |
             ccache-
+            
       - name: Configure ccache
         run: |
           ccache -M 5G
@@ -90,6 +91,7 @@ jobs:
           ccache -z
           echo "=== ccache config ==="
           ccache -p | grep -E "max_size|compression"
+          
       - name: Verify toolchain
         run: |
           echo "=== Clang version ==="
@@ -98,6 +100,7 @@ jobs:
           ld.lld --version || true
           echo "=== Tools ==="
           which clang ld.lld llvm-ar llvm-nm llvm-objcopy || true
+          
       - name: Generate defconfig
         run: |
           export ARCH=arm64
@@ -110,11 +113,13 @@ jobs:
             CROSS_COMPILE=aarch64-linux-gnu- \
             CROSS_COMPILE_ARM32=arm-linux-gnueabi- \
             stone_defconfig
+            
       - name: Configure kernel options
         run: |
           # Enable options without modifying defconfig
           scripts/config --file out/.config \
             --enable CONFIG_KSU \
+            --enable CONFIG_KSU_SUSFS \
             --enable CONFIG_COMPAT_VDSO \
             --enable CONFIG_SHADOW_CALL_STACK \
             --enable CONFIG_SHADOW_CALL_STACK_VMAP \
@@ -132,13 +137,15 @@ jobs:
             CROSS_COMPILE=aarch64-linux-gnu- \
             CROSS_COMPILE_ARM32=arm-linux-gnueabi- \
             olddefconfig
+
       - name: Verify kernel config
         run: |
           echo "=== Checking critical configs ==="
-          grep -E "CONFIG_COMPAT_VDSO|CONFIG_SHADOW_CALL_STACK|CONFIG_SHADOW_CALL_STACK_VMAP|CONFIG_LTO_CLANG|CONFIG_LTO_NONE|CONFIG_CFI_CLANG|CONFIG_RELR|CONFIG_THINLTO" out/.config
+          grep -E "CONFIG_KSU|CONFIG_KSU_SUSFS|CONFIG_COMPAT_VDSO|CONFIG_SHADOW_CALL_STACK|CONFIG_SHADOW_CALL_STACK_VMAP|CONFIG_LTO_CLANG|CONFIG_LTO_NONE|CONFIG_CFI_CLANG|CONFIG_RELR|CONFIG_THINLTO" out/.config
           echo ""
           declare -A expected=(
             ["CONFIG_KSU"]=y
+            ["CONFIG_KSU_SUSFS"]=y
             ["CONFIG_COMPAT_VDSO"]=y
             ["CONFIG_SHADOW_CALL_STACK"]=y
             ["CONFIG_SHADOW_CALL_STACK_VMAP"]=y
@@ -166,6 +173,7 @@ jobs:
               echo "✅ ${cfg} is disabled"
             fi
           done
+          
       - name: Build kernel
         run: |
           export ARCH=arm64
@@ -180,6 +188,7 @@ jobs:
             CROSS_COMPILE_ARM32=arm-linux-gnueabi- \
             -j$(nproc --all) \
             2>&1 | tee build.log
+            
       - name: Print ccache stats
         if: always()
         run: ccache -s
