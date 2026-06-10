@@ -5904,7 +5904,7 @@ static void update_sw_icl_max(struct smb_charger *chg, int val)
 					is_flash_active(chg) ?
 					SDP_CURRENT_UA : SDP_100_MA);
 		}
-		vote(chg->usb_icl_votable, SW_ICL_MAX_VOTER, false, 0);
+		vote(chg->usb_icl_votable, SW_ICL_MAX_VOTER, true, 5000000);
 		break;
 	case POWER_SUPPLY_TYPE_USB_CDP:
 		vote(chg->usb_icl_votable, SW_ICL_MAX_VOTER, true,
