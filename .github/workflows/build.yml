@@ -63,6 +63,11 @@ jobs:
               sed -i '1i #include <linux/uaccess.h>' "$KSU_DIR/ksu.c"
           fi
 
+          if ! grep -q "kernelsu/" drivers/Makefile; then
+            echo "obj-y += kernelsu/" >> drivers/Makefile
+            echo "=== KernelSU registrado no drivers/Makefile com sucesso ==="
+          fi
+
           # 5. Salvar alterações para o Build
           git config --global user.email "bot@github.com"
           git config --global user.name "GitHub Actions"
