@@ -6,6 +6,12 @@
 # Rewritten to use lists instead of if-statements.
 # 
 
+# ==========================================
+# FORÇA BRUTA PARA O SUSFS
+ccflags-y += -DCONFIG_SUSFS=1 -DCONFIG_KSU_SUSFS=1
+obj-y += susfs.o
+# ==========================================
+
 ccflags-y += -DANDROID_GKI_VFS_EXPORT_ONLY=VFS_internal_I_am_really_a_filesystem_and_am_NOT_a_driver
 
 obj-y :=	open.o read_write.o file_table.o super.o \
@@ -47,7 +53,6 @@ obj-$(CONFIG_BINFMT_ELF)	+= binfmt_elf.o
 obj-$(CONFIG_COMPAT_BINFMT_ELF)	+= compat_binfmt_elf.o
 obj-$(CONFIG_BINFMT_ELF_FDPIC)	+= binfmt_elf_fdpic.o
 obj-$(CONFIG_BINFMT_FLAT)	+= binfmt_flat.o
-obj-y += susfs.o
 
 obj-$(CONFIG_FS_MBCACHE)	+= mbcache.o
 obj-$(CONFIG_FS_POSIX_ACL)	+= posix_acl.o
