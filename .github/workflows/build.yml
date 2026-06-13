@@ -219,27 +219,26 @@ jobs:
           path: build.log
           retention-days: 7
           
-      
       - name: Package with AnyKernel3
         run: |
           # 1. Baixar o seu AnyKernel3
           git clone https://github.com/NICKZZIN/ANYKERNEL3-C137 AK3
-         
+          
           # 2. Copiar a Image principal
           cp out/arch/arm64/boot/Image AK3/
-         
+          
           # 3. Copiar dtbo.img se o seu kernel tiver gerado
           if [ -f out/arch/arm64/boot/dtbo.img ]; then
-           cp out/arch/arm64/boot/dtbo.img AK3/
+            cp out/arch/arm64/boot/dtbo.img AK3/
           fi
-         
+          
           # 4. Copiar os arquivos .dtb
           if ls out/arch/arm64/boot/dts/vendor/qcom/*.dtb 1>/dev/null 2>&1; then
-           cp out/arch/arm64/boot/dts/vendor/qcom/*.dtb AK3/dtb/ || true
+            cp out/arch/arm64/boot/dts/vendor/qcom/*.dtb AK3/dtb/ || true
           elif ls out/arch/arm64/boot/dts/vendor/xiaomi/*.dtb 1>/dev/null 2>&1; then
-           cp out/arch/arm64/boot/dts/vendor/xiaomi/*.dtb AK3/dtb/ || true
+            cp out/arch/arm64/boot/dts/vendor/xiaomi/*.dtb AK3/dtb/ || true
           fi
-         
+          
           # 5. Limpar arquivos desnecessários (para o GitHub zipar apenas o que importa)
           rm -rf AK3/.git AK3/README.md AK3/*placeholder
       - name: Upload Flashable Zip
