@@ -7,8 +7,18 @@
 # 
 
 # ==========================================
-# FORÇA BRUTA PARA O SUSFS
-ccflags-y += -DCONFIG_SUSFS=1 -DCONFIG_KSU_SUSFS=1
+# FORÇA BRUTA PARA O SUSFS (COMPLETA)
+ccflags-y += -DCONFIG_SUSFS=1 \
+             -DCONFIG_KSU_SUSFS=1 \
+             -DCONFIG_KSU_SUSFS_SUS_PATH=1 \
+             -DCONFIG_KSU_SUSFS_SUS_MOUNT=1 \
+             -DCONFIG_KSU_SUSFS_SUS_KSTAT=1 \
+             -DCONFIG_KSU_SUSFS_SUS_OVERLAY=1 \
+             -DCONFIG_KSU_SUSFS_TRY_UMOUNT=1 \
+             -DCONFIG_KSU_SUSFS_SPOOF_UNAME=1 \
+             -DCONFIG_KSU_SUSFS_ENABLE_LOG=1 \
+             -DCONFIG_KSU_SUSFS_OPEN_REDIRECT=1 \
+             -DCONFIG_KSU_SUSFS_SUS_SU=1
 obj-y += susfs.o
 # ==========================================
 
