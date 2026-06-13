@@ -5,23 +5,6 @@
 # 14 Sep 2000, Christoph Hellwig <hch@infradead.org>
 # Rewritten to use lists instead of if-statements.
 # 
-
-# ==========================================
-# FORÇA BRUTA PARA O SUSFS (COMPLETA)
-ccflags-y += -DCONFIG_SUSFS=1 \
-             -DCONFIG_KSU_SUSFS=1 \
-             -DCONFIG_KSU_SUSFS_SUS_PATH=1 \
-             -DCONFIG_KSU_SUSFS_SUS_MOUNT=1 \
-             -DCONFIG_KSU_SUSFS_SUS_KSTAT=1 \
-             -DCONFIG_KSU_SUSFS_SUS_OVERLAY=1 \
-             -DCONFIG_KSU_SUSFS_TRY_UMOUNT=1 \
-             -DCONFIG_KSU_SUSFS_SPOOF_UNAME=1 \
-             -DCONFIG_KSU_SUSFS_ENABLE_LOG=1 \
-             -DCONFIG_KSU_SUSFS_OPEN_REDIRECT=1 \
-             -DCONFIG_KSU_SUSFS_SUS_SU=1
-obj-y += susfs.o
-# ==========================================
-
 ccflags-y += -DANDROID_GKI_VFS_EXPORT_ONLY=VFS_internal_I_am_really_a_filesystem_and_am_NOT_a_driver
 
 obj-y :=	open.o read_write.o file_table.o super.o \
