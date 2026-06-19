@@ -221,29 +221,24 @@ jobs:
           
       - name: Package with AnyKernel3
         run: |
-          # 1. Baixar o seu AnyKernel3
+          # 1. Baixar o AnyKernel3 correto
           git clone https://github.com/NICKZZIN/ANYKERNEL3-C137 AK3
           
-          # 2. Copiar a Image principal
+          # 2. Copiar a Image principal para a raiz do AnyKernel
           cp out/arch/arm64/boot/Image AK3/
           
-          # 3. Copiar dtbo.img se o seu kernel tiver gerado
-          if [ -f out/arch/arm64/boot/dtbo.img ]; then
-            cp out/arch/arm64/boot/dtbo.img AK3/
-          fi
+          # 3. Achar qualquer arquivo dtbo (seja .dtbo ou dtbo.img), remover o nome original e jogar na raiz principal como 'dtbo'
+          find out/arch/arm64/boot/dts out/arch/arm64/boot -type f \( -name "*.dtbo" -o -name "dtbo.img" \) -exec cp {} AK3/dtbo \;
           
-          # 4. Copiar os arquivos .dtb
-          if ls out/arch/arm64/boot/dts/vendor/qcom/*.dtb 1>/dev/null 2>&1; then
-            cp out/arch/arm64/boot/dts/vendor/qcom/*.dtb AK3/dtb/ || true
-          elif ls out/arch/arm64/boot/dts/vendor/xiaomi/*.dtb 1>/dev/null 2>&1; then
-            cp out/arch/arm64/boot/dts/vendor/xiaomi/*.dtb AK3/dtb/ || true
-          fi
+          # 4. Achar qualquer arquivo dtb, remover o nome original e jogar na raiz principal como 'dtb'
+          find out/arch/arm64/boot/dts -type f -name "*.dtb" -exec cp {} AK3/dtb \;
           
-          # 5. Limpar arquivos desnecessários (para o GitHub zipar apenas o que importa)
+          # 5. Limpar arquivos desnecessários do AnyKernel para o ZIP ficar limpo
           rm -rf AK3/.git AK3/README.md AK3/*placeholder
+          
       - name: Upload Flashable Zip
         uses: actions/upload-artifact@v4
         with:
           name: C137-WKSU-SUSFS v1
           path: AK3/
-          retention-days: 30
+          retention-days: 120
