@@ -41,16 +41,16 @@ jobs:
         run: |
           # 1. Instalação do Wild_KSU a partir do SEU Fork corrigido
           echo "=== Instalando Wild_KSU (Fork: NICKZZIN) ==="
-          curl -LSs "https://raw.githubusercontent.com/NICKZZIN/Wild_KSU/refs/heads/stable/kernel/setup.sh" | bash -s stable
+          curl -LSs "https://raw.githubusercontent.com/cyberc3dr/KernelSU-Next/refs/heads/pershoot-susfs-legacy/build.sh" | bash -s stable
           
           # 2. Aplicar o Patch do SUSFS para Kernel 5.4
           echo "=== Aplicando Patch SUSFS 5.4 ==="
-          curl -LSs "https://raw.githubusercontent.com/JackA1ltman/NonGKI_Kernel_Build_2nd/mainline/Patches/Patch/susfs_patch_to_5.4.patch" -o susfs.patch
+          curl -LSs "https://raw.githubusercontent.com/cyberc3dr/nGKI_Kernel_Build/refs/heads/main/Patches/Patch/susfs_patch_to_5.4.patch" -o susfs.patch
           patch -p1 < susfs.patch || echo "⚠️ Patch já aplicado ou falhou em alguns hunks"
           
           # 3. Aplicar Inline Hooks (Bypass)
           echo "=== Aplicando Inline Hooks ==="
-          curl -LSs "https://raw.githubusercontent.com/JackA1ltman/NonGKI_Kernel_Build_2nd/refs/heads/mainline/Patches/susfs_inline_hook_patches.sh" | bash
+          curl -LSs "https://raw.githubusercontent.com/cyberc3dr/nGKI_Kernel_Build/refs/heads/main/Patches/susfs_inline_hook_patches.sh" | bash
           
           # 3.5 FIX: Remover chamada para função inexistente no SUSFS v1.5.3
           echo "=== Corrigindo incompatibilidade do SUSFS v1.5.3 ==="
